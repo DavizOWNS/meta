@@ -1,5 +1,8 @@
 package sk.tuke.mp.persistence.model;
 
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.List;
 
 /**
@@ -41,5 +44,13 @@ public class Table {
         }
 
         return null;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public Iterable<Column> getColumns() {
+        return columns;
     }
 }

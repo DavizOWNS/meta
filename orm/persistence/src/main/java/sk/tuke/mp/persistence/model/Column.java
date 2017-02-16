@@ -1,5 +1,7 @@
 package sk.tuke.mp.persistence.model;
 
+import java.lang.reflect.Field;
+
 /**
  * Created by DAVID on 15.2.2017.
  */

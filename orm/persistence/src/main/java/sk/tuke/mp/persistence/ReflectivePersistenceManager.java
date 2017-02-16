@@ -3,11 +3,12 @@ package sk.tuke.mp.persistence;
 import sk.tuke.mp.persistence.model.Column;
 import sk.tuke.mp.persistence.model.ColumnType;
 import sk.tuke.mp.persistence.model.Table;
+import sk.tuke.mp.persistence.sql.IColumnValue;
+import sk.tuke.mp.persistence.sql.QueryBuilder;
+import sk.tuke.mp.persistence.sql.SqlCodes;
 
 import java.lang.reflect.Field;
-import java.sql.Connection;
-import java.sql.SQLException;
-import java.sql.Statement;
+import java.sql.*;
 import java.util.*;
 
 /**
@@ -20,11 +21,14 @@ public class ReflectivePersistenceManager implements PersistenceManager {
     private Map<Class, Table> tableMap;
     private boolean isInitialized;
 
+    private ObjectFactory objectFactory;
+
     public ReflectivePersistenceManager(Connection connection, Class... classes) {
         this.connection = connection;
         this.supportedTypes = classes;
 
         isInitialized = false;
+        objectFactory = new ObjectFactory();
 
         Exception error = buildModel();
         if(error != null)
@@ -61,6 +65,9 @@ public class ReflectivePersistenceManager implements PersistenceManager {
                               Set<Class> supportedComplexTypes,
                               Set<Class> visitedTypes) throws Exception {
         visitedTypes.add(cls);
+
+        if(!objectFactory.registerType(cls))
+            throw new Exception("Type " + cls.getName() + " does not have parameterless constructor");
 
         String tableName = cls.getSimpleName();
         Field[] fields = cls.getDeclaredFields();
@@ -122,24 +129,110 @@ public class ReflectivePersistenceManager implements PersistenceManager {
 
     @Override
     public void initializeDatabase() {
-        try(Statement stmt = connection.createStatement())
+        for(Table t : tableMap.values())
         {
-            stmt.executeUpdate("create table items (id INT primary key) ");
+            try {
+                createTable(t);
+            } catch (SQLException e) {
+                e.printStackTrace();
+                return;
+            }
+        }
+
+        isInitialized = true;
+    }
+    private void createTable(Table table) throws SQLException {
+        for (Column c : table.getColumns())
+        {
+            if(c.getForeignKeyReference() != null)
+            {
+                createTable(c.getForeignKeyReference().getTable());
+            }
+        }
+
+        try(Statement statement = connection.createStatement())
+        {
+            statement.executeUpdate(QueryBuilder.createTableQuery(table));
         }
         catch (SQLException ex)
         {
-            if(ex.getSQLState().equals("X0Y32")) //table already exists
+            if(ex.getSQLState().equals(SqlCodes.TABLE_ALREADY_EXISTS))
             {
-                return; // That's OK
+
             }
-            ex.printStackTrace();
+            else
+            {
+                throw ex;
+            }
         }
     }
 
     @Override
     public <T> List<T> getAll(Class<T> clazz) throws PersistenceException {
         throwIfNotInitialized();
-        return null;
+
+        Table table = tableMap.get(clazz);
+        if(table == null)
+            throw new PersistenceException();
+        String query = QueryBuilder.createSelectAllQuery(tableMap.get(clazz));
+
+        try(Statement statement = connection.createStatement())
+        {
+            ResultSet result =  statement.executeQuery(query);
+
+            List<T> objects = new ArrayList<T>();
+            while(result.next())
+            {
+                T instance = (T) objectFactory.createObject(clazz);
+
+                for(Column c : table.getColumns())
+                {
+                    Field field = null;
+                    try {
+                        field = clazz.getDeclaredField(c.getName());
+                        field.setAccessible(true);
+
+                    } catch (NoSuchFieldException e) {
+                        e.printStackTrace();
+                    }
+
+                    Object val = null;
+                    if(c.getForeignKeyReference() != null)
+                    {
+                        int id = result.getInt(c.getName());
+                        val = get(field.getClass(), id);
+                    }
+                    else {
+                        switch (c.getType()) {
+                            case INT:
+                                val = result.getInt(c.getName());
+                                break;
+                            case DOUBLE:
+                                val = result.getDouble(c.getName());
+                                break;
+                            case STRING:
+                                val = result.getString(c.getName());
+                                break;
+                        }
+                    }
+
+
+                    try {
+                        field.set(instance, val);
+                    } catch (IllegalAccessException e) {
+                        e.printStackTrace();
+                    }
+                }
+
+                objects.add(instance);
+            }
+
+            return objects;
+        }
+        catch (SQLException ex)
+        {
+            throw new PersistenceException();
+        }
     }
 
     @Override
@@ -157,7 +250,87 @@ public class ReflectivePersistenceManager implements PersistenceManager {
     @Override
     public int save(Object value) throws PersistenceException {
         throwIfNotInitialized();
-        return 0;
+
+        return insertObject(value);
+    }
+
+    /**
+     * Inserts object to database and returns its id
+     * @param obj the object to insert
+     * @return id of inserted object
+     */
+    private int insertObject(Object obj) throws PersistenceException {
+        Table table = tableMap.get(obj.getClass());
+        if(table == null)
+            throw new PersistenceException();
+        String query = QueryBuilder.createInsertQuery(table, Collections.singletonList(obj), new IColumnValue() {
+            @Override
+            public String getValue(Object obj, Column column) {
+                Field field = null;
+                try {
+                    field = obj.getClass().getDeclaredField(column.getName());
+                    field.setAccessible(true);
+                } catch (NoSuchFieldException e) {
+                    e.printStackTrace();
+                    return null;
+                }
+
+                if(column.getForeignKeyReference() != null)
+                {
+                    try {
+                        Object objRef = field.get(obj);
+                        Field refIdField = objRef.getClass().getDeclaredField("id");
+                        refIdField.setAccessible(true);
+                        int id = (int) refIdField.get(objRef);
+                        if(id > 0)
+                        {
+                            return String.valueOf(id);
+                        }
+                        else
+                        {
+                            return String.valueOf(insertObject(objRef));
+                        }
+                    } catch (IllegalAccessException | PersistenceException | NoSuchFieldException e) {
+                        e.printStackTrace(); //should not happen
+                    }
+                    return null;
+                }
+                else
+                {
+                    try {
+                        return field.get(obj).toString();
+                    } catch (IllegalAccessException e) {
+                        e.printStackTrace(); //should not happen
+                        return null;
+                    }
+                }
+            }
+        });
+
+        try
+        {
+            connection.setAutoCommit(false);
+
+            PreparedStatement statement = connection.prepareStatement(query, Statement.RETURN_GENERATED_KEYS);
+            int rowsAffected = statement.executeUpdate();
+            if(rowsAffected == 0) {
+                connection.setAutoCommit(true);
+                throw new PersistenceException();
+            }
+
+            connection.commit();
+            connection.setAutoCommit(true);
+
+            ResultSet generatedKeys = statement.getGeneratedKeys();
+            generatedKeys.next();
+            int id = generatedKeys.getInt(1);
+
+            return id;
+        }
+        catch (SQLException ex)
+        {
+            throw new PersistenceException();
+        }
     }
 
     private void throwIfNotInitialized()
