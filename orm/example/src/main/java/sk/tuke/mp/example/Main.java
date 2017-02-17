@@ -26,19 +26,27 @@ public class Main {
         mrkvicka.setDepartment(development);
         Person novak = new Person("Jan", "Novak", 45);
         novak.setDepartment(marketing);
+        Person mrkva = new Person("Janko", "Mrkva", 33);
+        mrkva.setDepartment(marketing);
 
         manager.save(hrasko);
-        // manager.save(mrkvicka);
-        // manager.save(novak);
+        manager.save(mrkvicka);
+        manager.save(novak);
+        manager.save(mrkva);
 
-        List<Person> persons = manager.getAll(Person.class);
-        for (Person person : persons) {
+        List<Person> people = manager.getAll(Person.class);
+        for (Person person : people) {
+            System.out.println(person);
+            System.out.println("  " + person.getDepartment());
+        }
+
+        List<Person> people2 = manager.getBy(Person.class, "surname", "Janko");
+        for (Person person : people2) {
             System.out.println(person);
             System.out.println("  " + person.getDepartment());
         }
 
         conn.close();
-
         try {
             DriverManager.getConnection("jdbc:derby:orm/test.db;shutdown=true").close();
         }

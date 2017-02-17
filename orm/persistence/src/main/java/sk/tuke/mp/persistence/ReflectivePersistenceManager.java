@@ -2,6 +2,7 @@ package sk.tuke.mp.persistence;
 
 import sk.tuke.mp.persistence.model.Column;
 import sk.tuke.mp.persistence.model.ColumnType;
+import sk.tuke.mp.persistence.model.IValueAccessor;
 import sk.tuke.mp.persistence.model.Table;
 import sk.tuke.mp.persistence.sql.IColumnValue;
 import sk.tuke.mp.persistence.sql.QueryBuilder;
@@ -17,119 +18,28 @@ import java.util.*;
 public class ReflectivePersistenceManager implements PersistenceManager {
 
     private Connection connection;
-    private Class[] supportedTypes;
-    private Map<Class, Table> tableMap;
     private boolean isInitialized;
 
     private ObjectFactory objectFactory;
+    private MetadataStore metaStore;
 
     public ReflectivePersistenceManager(Connection connection, Class... classes) {
         this.connection = connection;
-        this.supportedTypes = classes;
 
         isInitialized = false;
         objectFactory = new ObjectFactory();
+        metaStore = new MetadataStore(objectFactory);
 
-        Exception error = buildModel();
-        if(error != null)
-            throw new IllegalArgumentException("Provided types are invalid. Parameter: classes", error);
-    }
-
-    private Exception buildModel()
-    {
-        if(supportedTypes.length == 0)
-            return new Exception("No types provided");
-
-        Map<Class, Table> tableLookup = new HashMap<>(supportedTypes.length);
-        Set<Class> supported = new HashSet<>();
-        supported.addAll(Arrays.asList(supportedTypes));
-        Set<Class> visitedTypes = new HashSet<>();
-
-        for(Class cls : supportedTypes)
-        {
-            if(tableLookup.containsKey(cls)) continue;
-
-            try {
-                Table table = createTable(cls, tableLookup, supported, visitedTypes);
-            } catch (Exception e) {
-                return e;
-            }
+        try {
+            metaStore.registerTablesForTypes(Arrays.asList(classes));
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Provided types are invalid. Parameter: classes", e);
         }
-
-        tableMap = tableLookup;
-
-        return null;
-    }
-
-    private Table createTable(Class cls, Map<Class, Table> tableLookup,
-                              Set<Class> supportedComplexTypes,
-                              Set<Class> visitedTypes) throws Exception {
-        visitedTypes.add(cls);
-
-        if(!objectFactory.registerType(cls))
-            throw new Exception("Type " + cls.getName() + " does not have parameterless constructor");
-
-        String tableName = cls.getSimpleName();
-        Field[] fields = cls.getDeclaredFields();
-        List<Column> columns = new ArrayList<>();
-        for(Field f : fields)
-        {
-            String columnName = f.getName();
-            ColumnType columnType = ColumnType.Unknown;
-            Class type = f.getType();
-            Column column = null;
-            if(type == int.class)
-            {
-                columnType = ColumnType.INT;
-                if(Objects.equals(columnName, "id"))
-                    column = Column.createPrimariKeyColumn();
-                else
-                    column = Column.createPrimitiveColumn(columnName, columnType);
-            }
-            else if(type == double.class)
-            {
-                columnType = ColumnType.DOUBLE;
-                column = Column.createPrimitiveColumn(columnName, columnType);
-            }
-            else if(type == String.class)
-            {
-                columnType = ColumnType.STRING;
-                column = Column.createPrimitiveColumn(columnName, columnType);
-            }
-            else
-            {
-                if(!supportedComplexTypes.contains(type))
-                    throw new Exception("Required type not provided"); //TODO proper exception
-
-                Table ref = null;
-                if(!tableLookup.containsKey(type))
-                {
-                    if(visitedTypes.contains(type)) //circular dependency
-                    {
-                        throw new Exception("Circular dependency in provided types"); //TODO proper exception
-                    }
-                    ref = createTable(type, tableLookup, supportedComplexTypes, visitedTypes);
-                }
-                else
-                {
-                    ref = tableLookup.get(type);
-                }
-
-                column = Column.createReferenceColumn(columnName, ref);
-            }
-
-            columns.add(column);
-        }
-
-        Table table = new Table(tableName, columns);
-
-        tableLookup.put(cls, table);
-        return table;
     }
 
     @Override
     public void initializeDatabase() {
-        for(Table t : tableMap.values())
+        for(Table t : metaStore.getTables())
         {
             try {
                 createTable(t);
@@ -171,36 +81,29 @@ public class ReflectivePersistenceManager implements PersistenceManager {
     public <T> List<T> getAll(Class<T> clazz) throws PersistenceException {
         throwIfNotInitialized();
 
-        Table table = tableMap.get(clazz);
+        Table table = metaStore.getTable(clazz);
         if(table == null)
             throw new PersistenceException();
-        String query = QueryBuilder.createSelectAllQuery(tableMap.get(clazz));
+        String query = QueryBuilder.createSelectAllQuery(table);
 
-        try(Statement statement = connection.createStatement())
+        try(PreparedStatement statement = connection.prepareStatement("SELECT * FROM " + table.getName()))
         {
-            ResultSet result =  statement.executeQuery(query);
+            ResultSet result =  statement.executeQuery();
 
-            List<T> objects = new ArrayList<T>();
+            List<T> objects = new ArrayList<>();
             while(result.next())
             {
                 T instance = (T) objectFactory.createObject(clazz);
 
                 for(Column c : table.getColumns())
                 {
-                    Field field = null;
-                    try {
-                        field = clazz.getDeclaredField(c.getName());
-                        field.setAccessible(true);
-
-                    } catch (NoSuchFieldException e) {
-                        e.printStackTrace();
-                    }
+                    IValueAccessor valueAccessor = metaStore.getValueAccessorForColumn(c);
 
                     Object val = null;
                     if(c.getForeignKeyReference() != null)
                     {
                         int id = result.getInt(c.getName());
-                        val = get(field.getClass(), id);
+                        val = get(valueAccessor.getValueType(), id);
                     }
                     else {
                         switch (c.getType()) {
@@ -217,11 +120,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
                     }
 
 
-                    try {
-                        field.set(instance, val);
-                    } catch (IllegalAccessException e) {
-                        e.printStackTrace();
-                    }
+                    valueAccessor.set(instance, val);
                 }
 
                 objects.add(instance);
@@ -231,6 +130,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
         }
         catch (SQLException ex)
         {
+            ex.printStackTrace();
             throw new PersistenceException();
         }
     }
@@ -238,13 +138,120 @@ public class ReflectivePersistenceManager implements PersistenceManager {
     @Override
     public <T> T get(Class<T> type, int id) throws PersistenceException {
         throwIfNotInitialized();
-        return null;
+
+        Table table = metaStore.getTable(type);
+        if(table == null)
+            throw new PersistenceException();
+        //String query = QueryBuilder.createSelectAllQuery(table);
+
+        try(PreparedStatement statement = connection.prepareStatement("SELECT * FROM " + table.getName() + " WHERE id = ?"))
+        {
+            statement.setInt(1, id);
+            ResultSet result =  statement.executeQuery();
+            if(!result.next())
+            {
+                return null;
+            }
+
+            T instance = (T) objectFactory.createObject(type);
+
+            for(Column c : table.getColumns())
+            {
+                IValueAccessor valueAccessor = metaStore.getValueAccessorForColumn(c);
+
+                if(c.getForeignKeyReference() != null)
+                {
+                    int refId = result.getInt(c.getName());
+                    valueAccessor.set(instance, get(valueAccessor.getValueType(), refId));
+                }
+                else
+                {
+                    Object val = null;
+                    switch (c.getType()) {
+                        case INT:
+                            val = result.getInt(c.getName());
+                            break;
+                        case DOUBLE:
+                            val = result.getDouble(c.getName());
+                            break;
+                        case STRING:
+                            val = result.getString(c.getName());
+                            break;
+                    }
+
+                    valueAccessor.set(instance, val);
+                }
+            }
+
+            return instance;
+        }
+        catch (SQLException ex)
+        {
+            throw new PersistenceException();
+        }
     }
 
     @Override
     public <T> List<T> getBy(Class<T> type, String fieldName, Object value) {
         throwIfNotInitialized();
-        return null;
+
+        Table table = metaStore.getTable(type);
+        if(table == null)
+            return new ArrayList<>();
+
+        try(PreparedStatement statement = connection.prepareStatement("SELECT * FROM " + table.getName() + " WHERE " + fieldName + " = ?"))
+        {
+            statement.setObject(1, value);
+            ResultSet result =  statement.executeQuery();
+
+            List<T> objects = new ArrayList<>();
+            while(result.next())
+            {
+                T instance = (T) objectFactory.createObject(type);
+
+                for(Column c : table.getColumns())
+                {
+                    IValueAccessor valueAccessor = metaStore.getValueAccessorForColumn(c);
+
+                    Object val = null;
+                    if(c.getForeignKeyReference() != null)
+                    {
+                        int id = result.getInt(c.getName());
+                        try {
+                            val = get(valueAccessor.getValueType(), id);
+                        } catch (PersistenceException e) {
+                            e.printStackTrace();
+                            return new ArrayList<>();
+                        }
+                    }
+                    else {
+                        switch (c.getType()) {
+                            case INT:
+                                val = result.getInt(c.getName());
+                                break;
+                            case DOUBLE:
+                                val = result.getDouble(c.getName());
+                                break;
+                            case STRING:
+                                val = result.getString(c.getName());
+                                break;
+                        }
+                    }
+
+
+                    valueAccessor.set(instance, val);
+                }
+
+                objects.add(instance);
+            }
+
+            return objects;
+        }
+        catch (SQLException ex)
+        {
+            ex.printStackTrace();
+            return new ArrayList<>();
+        }
     }
 
     @Override
@@ -260,28 +267,21 @@ public class ReflectivePersistenceManager implements PersistenceManager {
      * @return id of inserted object
      */
     private int insertObject(Object obj) throws PersistenceException {
-        Table table = tableMap.get(obj.getClass());
+        Table table = metaStore.getTable(obj.getClass());
         if(table == null)
             throw new PersistenceException();
         String query = QueryBuilder.createInsertQuery(table, Collections.singletonList(obj), new IColumnValue() {
             @Override
             public String getValue(Object obj, Column column) {
-                Field field = null;
-                try {
-                    field = obj.getClass().getDeclaredField(column.getName());
-                    field.setAccessible(true);
-                } catch (NoSuchFieldException e) {
-                    e.printStackTrace();
-                    return null;
-                }
+                IValueAccessor valueAccessor = metaStore.getValueAccessorForColumn(column);
 
                 if(column.getForeignKeyReference() != null)
                 {
                     try {
-                        Object objRef = field.get(obj);
-                        Field refIdField = objRef.getClass().getDeclaredField("id");
-                        refIdField.setAccessible(true);
-                        int id = (int) refIdField.get(objRef);
+                        Object objRef = valueAccessor.get(obj);
+                        if(objRef == null) return "NULL";
+                        Table refTable = metaStore.getTable(objRef.getClass());
+                        int id = (int) metaStore.getValueAccessorForColumn(refTable.primaryKeyColumn()).get(objRef);
                         if(id > 0)
                         {
                             return String.valueOf(id);
@@ -290,26 +290,23 @@ public class ReflectivePersistenceManager implements PersistenceManager {
                         {
                             return String.valueOf(insertObject(objRef));
                         }
-                    } catch (IllegalAccessException | PersistenceException | NoSuchFieldException e) {
+                    } catch (PersistenceException e) {
                         e.printStackTrace(); //should not happen
                     }
                     return null;
                 }
                 else
                 {
-                    try {
-                        return field.get(obj).toString();
-                    } catch (IllegalAccessException e) {
-                        e.printStackTrace(); //should not happen
-                        return null;
-                    }
+                    Object val = valueAccessor.get(obj);
+                    if(val == null) return "NULL";
+                    return val.toString();
                 }
             }
         });
 
         try
         {
-            connection.setAutoCommit(false);
+            //connection.setAutoCommit(false);
 
             PreparedStatement statement = connection.prepareStatement(query, Statement.RETURN_GENERATED_KEYS);
             int rowsAffected = statement.executeUpdate();
@@ -318,12 +315,14 @@ public class ReflectivePersistenceManager implements PersistenceManager {
                 throw new PersistenceException();
             }
 
-            connection.commit();
-            connection.setAutoCommit(true);
+            //connection.commit();
+            //connection.setAutoCommit(true);
 
             ResultSet generatedKeys = statement.getGeneratedKeys();
             generatedKeys.next();
             int id = generatedKeys.getInt(1);
+
+            metaStore.getValueAccessorForColumn(table.primaryKeyColumn()).set(obj, id);
 
             return id;
         }

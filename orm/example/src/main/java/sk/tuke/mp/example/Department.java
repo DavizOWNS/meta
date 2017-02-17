@@ -1,8 +1,12 @@
 package sk.tuke.mp.example;
 
+import sk.tuke.mp.persistence.annotations.Required;
+
 public class Department {
 	private int id;
+    @Required
     private String name;
+    @Required
     private String code;
 
     public Department() {

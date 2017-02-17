@@ -29,6 +29,11 @@ public final class QueryBuilder {
             sb.append(" ");
             sb.append(SqlTypeConverter.getSqlTypeName(c.getType()));
 
+            if(!c.canBeNull())
+            {
+                sb.append(" NOT NULL");
+            }
+
             if(c.isPrimaryKey())
             {
                 sb.append(String.format(" constraint pk_%s primary key generated always as identity (START WITH 1, INCREMENT BY 1)", table.getName()));
@@ -79,9 +84,10 @@ public final class QueryBuilder {
                 if(!isFirst)
                     sb.append(", ");
 
-                if(c.getType() == ColumnType.STRING) sb.append("'");
-                sb.append(columnValue.getValue(obj, c));
-                if(c.getType() == ColumnType.STRING) sb.append("'");
+                String value = columnValue.getValue(obj, c);
+                if(c.getType() == ColumnType.STRING && !value.equals("NULL")) sb.append("'");
+                sb.append(value);
+                if(c.getType() == ColumnType.STRING && !value.equals("NULL")) sb.append("'");
 
                 isFirst = false;
             }

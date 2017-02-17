@@ -1,8 +1,13 @@
 package sk.tuke.mp.example;
 
+import sk.tuke.mp.persistence.annotations.Setter;
+import sk.tuke.mp.persistence.annotations.Table;
+
+@Table(name = "People")
 public class Person {
     private int id;
     private String surname;
+    @Setter(methodName = "setName")
     private String name;
     private int age;
 
