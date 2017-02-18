@@ -1,10 +1,11 @@
 package sk.tuke.mp.persistence;
 
+import sk.tuke.mp.persistence.annotations.Getter;
 import sk.tuke.mp.persistence.annotations.Required;
 import sk.tuke.mp.persistence.annotations.Setter;
 import sk.tuke.mp.persistence.model.Column;
 import sk.tuke.mp.persistence.model.ColumnType;
-import sk.tuke.mp.persistence.model.IValueAccessor;
+import sk.tuke.mp.persistence.valueAccess.*;
 import sk.tuke.mp.persistence.model.Table;
 
 import java.lang.reflect.Field;
@@ -114,23 +115,38 @@ public class MetadataStore {
                 column = tableBuilder.addReferenceColumn(columnName, ref, canBeNull);
             }
 
+            IValueSetter setter = null;
+            IValueGetter getter = null;
             IValueAccessor valueAccessor = null;
             Setter setterAno = f.getAnnotation(sk.tuke.mp.persistence.annotations.Setter.class);
+            Getter getterAno = f.getAnnotation(sk.tuke.mp.persistence.annotations.Getter.class);
             if(setterAno != null)
             {
-                Method setter =  cls.getDeclaredMethod(setterAno.methodName(), type);
-                if(setter == null)
+                Method setterMethod =  cls.getDeclaredMethod(setterAno.methodName(), type);
+                if(setterMethod == null)
                 {
                     throw new Exception("Setter method for field " + f.getName() + " not found");
                 }
-                valueAccessor = new ColumnMethodValueAccessor(setter, f);
+                setter = new MethodValueSetter(setterMethod);
             }
             else
             {
-                valueAccessor = new ColumnFieldValueAccessor(f);
+                setter = new FieldValueSetter(f);
+            }
+            if(getterAno != null)
+            {
+                Method getterMethod = cls.getDeclaredMethod(getterAno.methodName(), type);
+                if(getterMethod == null)
+                {
+                    throw new Exception("Getter method for field " + f.getName() + " not found");
+                }
+                getter = new MethodValueGetter(getterMethod);
+            }
+            else {
+                getter = new FieldValueGetter(f);
             }
 
-            valueAccessorMap.put(column, valueAccessor);
+            valueAccessorMap.put(column, new ColumnValueAccessor(type, setter, getter));
         }
 
         Table table = tableBuilder.build();

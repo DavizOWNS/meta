@@ -1,14 +1,12 @@
 package sk.tuke.mp.persistence;
 
 import sk.tuke.mp.persistence.model.Column;
-import sk.tuke.mp.persistence.model.ColumnType;
-import sk.tuke.mp.persistence.model.IValueAccessor;
+import sk.tuke.mp.persistence.valueAccess.IValueAccessor;
 import sk.tuke.mp.persistence.model.Table;
 import sk.tuke.mp.persistence.sql.IColumnValue;
 import sk.tuke.mp.persistence.sql.QueryBuilder;
 import sk.tuke.mp.persistence.sql.SqlCodes;
 
-import java.lang.reflect.Field;
 import java.sql.*;
 import java.util.*;
 
@@ -83,8 +81,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
 
         Table table = metaStore.getTable(clazz);
         if(table == null)
-            throw new PersistenceException();
-        String query = QueryBuilder.createSelectAllQuery(table);
+            throw new PersistenceException("Provided class is not supported: " + clazz.getName());
 
         try(PreparedStatement statement = connection.prepareStatement("SELECT * FROM " + table.getName()))
         {
@@ -130,8 +127,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
         }
         catch (SQLException ex)
         {
-            ex.printStackTrace();
-            throw new PersistenceException();
+            throw new PersistenceException("Objects of type " + clazz + " could not be loaded from database", ex);
         }
     }
 
@@ -141,8 +137,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
 
         Table table = metaStore.getTable(type);
         if(table == null)
-            throw new PersistenceException();
-        //String query = QueryBuilder.createSelectAllQuery(table);
+            throw new PersistenceException("Provided class is not supported: " + type.getName());
 
         try(PreparedStatement statement = connection.prepareStatement("SELECT * FROM " + table.getName() + " WHERE id = ?"))
         {
@@ -187,7 +182,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
         }
         catch (SQLException ex)
         {
-            throw new PersistenceException();
+            throw new PersistenceException("Object of type " + type.getName() + " with id " + id + " could not be loaded from database", ex);
         }
     }
 
@@ -269,26 +264,26 @@ public class ReflectivePersistenceManager implements PersistenceManager {
     private int insertObject(Object obj) throws PersistenceException {
         Table table = metaStore.getTable(obj.getClass());
         if(table == null)
-            throw new PersistenceException();
+            throw new PersistenceException("Provided class is not supported: " + obj.getClass().getName());
         String query = QueryBuilder.createInsertQuery(table, Collections.singletonList(obj), new IColumnValue() {
             @Override
-            public String getValue(Object obj, Column column) {
+            public Object getValue(Object obj, Column column) {
                 IValueAccessor valueAccessor = metaStore.getValueAccessorForColumn(column);
 
                 if(column.getForeignKeyReference() != null)
                 {
                     try {
                         Object objRef = valueAccessor.get(obj);
-                        if(objRef == null) return "NULL";
+                        if(objRef == null) return null;
                         Table refTable = metaStore.getTable(objRef.getClass());
                         int id = (int) metaStore.getValueAccessorForColumn(refTable.primaryKeyColumn()).get(objRef);
                         if(id > 0)
                         {
-                            return String.valueOf(id);
+                            return id;
                         }
                         else
                         {
-                            return String.valueOf(insertObject(objRef));
+                            return insertObject(objRef);
                         }
                     } catch (PersistenceException e) {
                         e.printStackTrace(); //should not happen
@@ -298,25 +293,19 @@ public class ReflectivePersistenceManager implements PersistenceManager {
                 else
                 {
                     Object val = valueAccessor.get(obj);
-                    if(val == null) return "NULL";
-                    return val.toString();
+                    if(val == null) return null;
+                    return val;
                 }
             }
         });
 
         try
         {
-            //connection.setAutoCommit(false);
-
             PreparedStatement statement = connection.prepareStatement(query, Statement.RETURN_GENERATED_KEYS);
             int rowsAffected = statement.executeUpdate();
             if(rowsAffected == 0) {
-                connection.setAutoCommit(true);
-                throw new PersistenceException();
+                throw new PersistenceException("Insert failed for object " + obj.toString());
             }
-
-            //connection.commit();
-            //connection.setAutoCommit(true);
 
             ResultSet generatedKeys = statement.getGeneratedKeys();
             generatedKeys.next();
@@ -328,7 +317,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
         }
         catch (SQLException ex)
         {
-            throw new PersistenceException();
+            throw new PersistenceException("Could not insert object of type " + obj.getClass(), ex);
         }
     }
 

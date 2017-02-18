@@ -84,10 +84,11 @@ public final class QueryBuilder {
                 if(!isFirst)
                     sb.append(", ");
 
-                String value = columnValue.getValue(obj, c);
-                if(c.getType() == ColumnType.STRING && !value.equals("NULL")) sb.append("'");
-                sb.append(value);
-                if(c.getType() == ColumnType.STRING && !value.equals("NULL")) sb.append("'");
+                Object value = columnValue.getValue(obj, c);
+                if(c.getType() == ColumnType.STRING && value != null) sb.append("'");
+                if(value == null) sb.append("NULL");
+                else sb.append(value.toString());
+                if(c.getType() == ColumnType.STRING && value != null) sb.append("'");
 
                 isFirst = false;
             }

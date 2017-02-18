@@ -1,4 +1,4 @@
-package sk.tuke.mp.persistence.model;
+package sk.tuke.mp.persistence.valueAccess;
 
 /**
  * Created by DAVID on 16.2.2017.
