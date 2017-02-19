@@ -2,7 +2,7 @@ package sk.tuke.mp.example;
 
 import sk.tuke.mp.persistence.annotations.Required;
 
-public class Department {
+public class Department implements IDepartment{
 	private int id;
     @Required
     private String name;

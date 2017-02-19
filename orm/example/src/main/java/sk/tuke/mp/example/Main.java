@@ -11,7 +11,8 @@ import java.util.List;
 public class Main {
     public static void main(String[] args) throws Exception {
         Class.forName("org.apache.derby.jdbc.EmbeddedDriver").newInstance();
-        Connection conn = DriverManager.getConnection("jdbc:derby:orm/test.db;create=true");
+        //Connection conn = DriverManager.getConnection("jdbc:derby:orm/test.db;create=true");
+        Connection conn = DriverManager.getConnection("jdbc:derby:memory:test.db;create=true");
 
         PersistenceManager manager = new ReflectivePersistenceManager(conn, Person.class, Department.class);
 
@@ -34,8 +35,8 @@ public class Main {
         manager.save(novak);
         manager.save(mrkva);
 
-        List<Person> people = manager.getAll(Person.class);
-        for (Person person : people) {
+        List<IPerson> people = manager.getAll(IPerson.class);
+        for (IPerson person : people) {
             System.out.println(person);
             System.out.println("  " + person.getDepartment());
         }
@@ -47,9 +48,9 @@ public class Main {
         }
 
         conn.close();
-        try {
+        /*try {
             DriverManager.getConnection("jdbc:derby:orm/test.db;shutdown=true").close();
         }
-        catch (Exception ignored){}
+        catch (Exception ignored){}*/
     }
 }

@@ -4,14 +4,14 @@ import sk.tuke.mp.persistence.annotations.Setter;
 import sk.tuke.mp.persistence.annotations.Table;
 
 @Table(name = "People")
-public class Person {
+public class Person implements IPerson{
     private int id;
     private String surname;
     @Setter(methodName = "setName")
     private String name;
     private int age;
 
-    private Department department;
+    private IDepartment department;
 
     public Person(String surname, String name, int age) {
         this.surname = surname;
@@ -51,7 +51,7 @@ public class Person {
     }
 
 
-    public Department getDepartment() {
+    public IDepartment getDepartment() {
         return department;
     }
 

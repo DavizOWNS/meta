@@ -30,7 +30,12 @@ public class MetadataStore {
 
     public void registerTablesForTypes(List<Class> types) throws Exception
     {
-        availableTypes.addAll(types);
+        for(Class type : types)
+        {
+            if(type.isInterface() || type.isEnum() || type.isArray() || type.isPrimitive())
+                throw new Exception("Only class types are supported");
+            availableTypes.add(type);
+        }
 
         Map<Class, Table> tableLookup = new HashMap<>(types.size());
         Set<Class> supported = new HashSet<>();
@@ -95,21 +100,26 @@ public class MetadataStore {
             }
             else
             {
-                if(!supportedComplexTypes.contains(type))
+                Class implType = type;
+                if(implType.isInterface())
+                {
+                    implType = getSingleImplementingType(type);
+                }
+                if(implType == null || !supportedComplexTypes.contains(implType))
                     throw new Exception("Required type not provided"); //TODO proper exception
 
                 Table ref = null;
-                if(!tableLookup.containsKey(type))
+                if(!tableLookup.containsKey(implType))
                 {
-                    if(visitedTypes.contains(type)) //circular dependency
+                    if(visitedTypes.contains(implType)) //circular dependency
                     {
                         throw new Exception("Circular dependency in provided types"); //TODO proper exception
                     }
-                    ref = createTable(type, tableLookup, supportedComplexTypes, visitedTypes);
+                    ref = createTable(implType, tableLookup, supportedComplexTypes, visitedTypes);
                 }
                 else
                 {
-                    ref = tableLookup.get(type);
+                    ref = tableLookup.get(implType);
                 }
 
                 column = tableBuilder.addReferenceColumn(columnName, ref, canBeNull);
@@ -157,6 +167,9 @@ public class MetadataStore {
 
     public Table getTable(Class type)
     {
+        if(type.isInterface()) {
+            return tableMap.get(getSingleImplementingType(type));
+        }
         return tableMap.get(type);
     }
 
@@ -168,5 +181,21 @@ public class MetadataStore {
     public IValueAccessor getValueAccessorForColumn(Column column)
     {
         return valueAccessorMap.get(column);
+    }
+
+    private Class getSingleImplementingType(Class inter)
+    {
+        Class implementation = null;
+        for(Class type : availableTypes)
+        {
+            if(inter.isAssignableFrom(type))
+            {
+                if(implementation != null)
+                    return null;
+                implementation = type;
+            }
+        }
+
+        return implementation;
     }
 }

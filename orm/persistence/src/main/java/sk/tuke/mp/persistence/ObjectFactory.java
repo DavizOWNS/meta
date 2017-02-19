@@ -17,6 +17,8 @@ public class ObjectFactory {
 
     public boolean registerType(Class type)
     {
+        if(type.isInterface())
+            return false;
         try {
             Constructor constructor = type.getConstructor();
 
@@ -30,7 +32,24 @@ public class ObjectFactory {
 
     public Object createObject(Class type)
     {
-        Constructor constructor = constructorMap.get(type);
+        Constructor constructor = null;
+        if(type.isInterface())
+        {
+            for(Map.Entry<Class, Constructor> pair : constructorMap.entrySet())
+            {
+                if(type.isAssignableFrom(pair.getKey()))
+                {
+                    if(constructor != null)
+                        return null;
+                    constructor = pair.getValue();
+                }
+            }
+        }
+        else
+            constructor = constructorMap.get(type);
+
+        if(constructor == null)
+            return null;
 
         Object instance = null;
         try {

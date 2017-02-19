@@ -1,6 +1,9 @@
 package sk.tuke.mp.persistence;
 
+import net.sf.cglib.proxy.Enhancer;
+import net.sf.cglib.proxy.LazyLoader;
 import sk.tuke.mp.persistence.model.Column;
+import sk.tuke.mp.persistence.model.ColumnType;
 import sk.tuke.mp.persistence.valueAccess.IValueAccessor;
 import sk.tuke.mp.persistence.model.Table;
 import sk.tuke.mp.persistence.sql.IColumnValue;
@@ -20,6 +23,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
 
     private ObjectFactory objectFactory;
     private MetadataStore metaStore;
+    private ObjectTracker objectTracker;
 
     public ReflectivePersistenceManager(Connection connection, Class... classes) {
         this.connection = connection;
@@ -27,6 +31,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
         isInitialized = false;
         objectFactory = new ObjectFactory();
         metaStore = new MetadataStore(objectFactory);
+        objectTracker = new ObjectTracker();
 
         try {
             metaStore.registerTablesForTypes(Arrays.asList(classes));
@@ -103,17 +108,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
                         val = get(valueAccessor.getValueType(), id);
                     }
                     else {
-                        switch (c.getType()) {
-                            case INT:
-                                val = result.getInt(c.getName());
-                                break;
-                            case DOUBLE:
-                                val = result.getDouble(c.getName());
-                                break;
-                            case STRING:
-                                val = result.getString(c.getName());
-                                break;
-                        }
+                        val = extractValue(result, c.getName(), c.getType());
                     }
 
 
@@ -135,6 +130,24 @@ public class ReflectivePersistenceManager implements PersistenceManager {
     public <T> T get(Class<T> type, int id) throws PersistenceException {
         throwIfNotInitialized();
 
+        if(type.isInterface())
+        {
+            Enhancer enhancer = new Enhancer();
+            enhancer.setSuperclass(type);
+            enhancer.setCallback(new LazyLoader() {
+                @Override
+                public Object loadObject() throws Exception {
+                    return getFromDb(type, id);
+                }
+            });
+
+            return (T) enhancer.create();
+        }
+
+        return getFromDb(type, id);
+    }
+    private <T> T getFromDb(Class<T> type, int id) throws PersistenceException
+    {
         Table table = metaStore.getTable(type);
         if(table == null)
             throw new PersistenceException("Provided class is not supported: " + type.getName());
@@ -161,18 +174,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
                 }
                 else
                 {
-                    Object val = null;
-                    switch (c.getType()) {
-                        case INT:
-                            val = result.getInt(c.getName());
-                            break;
-                        case DOUBLE:
-                            val = result.getDouble(c.getName());
-                            break;
-                        case STRING:
-                            val = result.getString(c.getName());
-                            break;
-                    }
+                    Object val = extractValue(result, c.getName(), c.getType());
 
                     valueAccessor.set(instance, val);
                 }
@@ -192,7 +194,13 @@ public class ReflectivePersistenceManager implements PersistenceManager {
 
         Table table = metaStore.getTable(type);
         if(table == null)
-            return new ArrayList<>();
+            return null;
+
+        boolean isFieldNameValid = false;
+        for(Column c : table.getColumns())
+            if(c.getName().equals(fieldName)) isFieldNameValid = true;
+        if(!isFieldNameValid)
+            return null;
 
         try(PreparedStatement statement = connection.prepareStatement("SELECT * FROM " + table.getName() + " WHERE " + fieldName + " = ?"))
         {
@@ -220,17 +228,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
                         }
                     }
                     else {
-                        switch (c.getType()) {
-                            case INT:
-                                val = result.getInt(c.getName());
-                                break;
-                            case DOUBLE:
-                                val = result.getDouble(c.getName());
-                                break;
-                            case STRING:
-                                val = result.getString(c.getName());
-                                break;
-                        }
+                        val = extractValue(result, c.getName(), c.getType());
                     }
 
 
@@ -245,13 +243,18 @@ public class ReflectivePersistenceManager implements PersistenceManager {
         catch (SQLException ex)
         {
             ex.printStackTrace();
-            return new ArrayList<>();
+            return null;
         }
     }
 
     @Override
     public int save(Object value) throws PersistenceException {
         throwIfNotInitialized();
+
+        if(objectTracker.hasObject(value))
+        {
+            return updateObject(value);
+        }
 
         return insertObject(value);
     }
@@ -319,6 +322,23 @@ public class ReflectivePersistenceManager implements PersistenceManager {
         {
             throw new PersistenceException("Could not insert object of type " + obj.getClass(), ex);
         }
+    }
+    private int updateObject(Object obj) throws PersistenceException
+    {
+        return 0;
+    }
+
+    private Object extractValue(ResultSet resultSet, String columnName, ColumnType columnType) throws SQLException {
+        switch (columnType) {
+            case INT:
+                return resultSet.getInt(columnName);
+            case DOUBLE:
+                return resultSet.getDouble(columnName);
+            case STRING:
+                return resultSet.getString(columnName);
+        }
+
+        return null;
     }
 
     private void throwIfNotInitialized()
