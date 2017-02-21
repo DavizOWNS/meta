@@ -31,6 +31,7 @@ public class Main {
         mrkva.setDepartment(marketing);
 
         manager.save(hrasko);
+        manager.save(hrasko);
         manager.save(mrkvicka);
         manager.save(novak);
         manager.save(mrkva);

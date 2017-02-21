@@ -10,6 +10,7 @@ import sk.tuke.mp.persistence.sql.IColumnValue;
 import sk.tuke.mp.persistence.sql.QueryBuilder;
 import sk.tuke.mp.persistence.sql.SqlCodes;
 
+import java.security.InvalidParameterException;
 import java.sql.*;
 import java.util.*;
 
@@ -251,12 +252,17 @@ public class ReflectivePersistenceManager implements PersistenceManager {
     public int save(Object value) throws PersistenceException {
         throwIfNotInitialized();
 
-        if(objectTracker.hasObject(value))
+        Table table = metaStore.getTable(value.getClass());
+        if(table == null) throw new PersistenceException("Provided class is not supported: " + value.getClass().getName());
+        Column primaryKeyColumn = table.primaryKeyColumn();
+        IValueAccessor idAccessor = metaStore.getValueAccessorForColumn(primaryKeyColumn);
+
+        if((int)idAccessor.get(value) != 0)
         {
-            return updateObject(value);
+            return updateObject(value, table);
         }
 
-        return insertObject(value);
+        return insertObject(value, table);
     }
 
     /**
@@ -264,10 +270,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
      * @param obj the object to insert
      * @return id of inserted object
      */
-    private int insertObject(Object obj) throws PersistenceException {
-        Table table = metaStore.getTable(obj.getClass());
-        if(table == null)
-            throw new PersistenceException("Provided class is not supported: " + obj.getClass().getName());
+    private int insertObject(Object obj, Table table) throws PersistenceException {
         String query = QueryBuilder.createInsertQuery(table, Collections.singletonList(obj), new IColumnValue() {
             @Override
             public Object getValue(Object obj, Column column) {
@@ -280,13 +283,13 @@ public class ReflectivePersistenceManager implements PersistenceManager {
                         if(objRef == null) return null;
                         Table refTable = metaStore.getTable(objRef.getClass());
                         int id = (int) metaStore.getValueAccessorForColumn(refTable.primaryKeyColumn()).get(objRef);
-                        if(id > 0)
+                        if(id != 0)
                         {
-                            return id;
+                            return updateObject(objRef, refTable);
                         }
                         else
                         {
-                            return insertObject(objRef);
+                            return insertObject(objRef, refTable);
                         }
                     } catch (PersistenceException e) {
                         e.printStackTrace(); //should not happen
@@ -323,9 +326,65 @@ public class ReflectivePersistenceManager implements PersistenceManager {
             throw new PersistenceException("Could not insert object of type " + obj.getClass(), ex);
         }
     }
-    private int updateObject(Object obj) throws PersistenceException
+    private int updateObject(Object obj, Table table) throws PersistenceException
     {
-        return 0;
+        int id = (int) metaStore.getValueAccessorForColumn(table.primaryKeyColumn()).get(obj);
+
+        StringBuilder updateBuilder = new StringBuilder("UPDATE ");
+        updateBuilder.append(table.getName());
+        updateBuilder.append(" SET ");
+        boolean isFirst = true;
+        for(Column c : table.getColumns())
+        {
+            if(c.isPrimaryKey()) continue;
+
+            if(!isFirst)
+                updateBuilder.append(',');
+
+            updateBuilder.append(c.getName()).append('=').append('?');
+
+            isFirst = false;
+        }
+        updateBuilder.append(" WHERE id=").append(id);
+
+        try
+        {
+            PreparedStatement statement = connection.prepareStatement(updateBuilder.toString());
+            int idx = 1;
+            for(Column c : table.getColumns())
+            {
+                if(c.isPrimaryKey()) continue;
+                Object value = metaStore.getValueAccessorForColumn(c).get(obj);
+                if(value == null) {
+                    statement.setNull(idx, java.sql.Types.NULL);
+                    continue;
+                }
+                if(c.getForeignKeyReference() != null) {
+                    Object refObj = metaStore.getValueAccessorForColumn(c).get(obj);
+                    int refId = (int) metaStore.getValueAccessorForColumn(c.getForeignKeyReference().getColumn()).get(refObj);
+                    if(refId == 0)
+                    {
+                        value = insertObject(refObj, c.getForeignKeyReference().getTable());
+                    }
+                    else
+                    {
+                        value = updateObject(refObj, c.getForeignKeyReference().getTable());
+                    }
+                }
+
+                statement.setObject(idx, value);
+
+                idx++;
+            }
+
+            statement.execute();
+        }
+        catch (SQLException e)
+        {
+            throw new PersistenceException("Could not update object of type " + obj.getClass(), e);
+        }
+
+        return id;
     }
 
     private Object extractValue(ResultSet resultSet, String columnName, ColumnType columnType) throws SQLException {
@@ -339,6 +398,20 @@ public class ReflectivePersistenceManager implements PersistenceManager {
         }
 
         return null;
+    }
+    private int getSqlType(ColumnType columnType)
+    {
+        switch (columnType)
+        {
+            case INT:
+                return Types.INTEGER;
+            case DOUBLE:
+                return Types.DOUBLE;
+            case STRING:
+                return Types.VARCHAR;
+            default:
+                throw new InvalidParameterException();
+        }
     }
 
     private void throwIfNotInitialized()
