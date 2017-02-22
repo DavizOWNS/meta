@@ -1,5 +1,6 @@
 package sk.tuke.mp.persistence;
 
+import sk.tuke.mp.persistence.annotations.ColumnAnnotations;
 import sk.tuke.mp.persistence.annotations.Getter;
 import sk.tuke.mp.persistence.annotations.Required;
 import sk.tuke.mp.persistence.annotations.Setter;
@@ -10,6 +11,7 @@ import sk.tuke.mp.persistence.model.Table;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.*;
 
 /**
@@ -74,11 +76,24 @@ public class MetadataStore {
         Field[] fields = cls.getDeclaredFields();
         for(Field f : fields)
         {
+            int mods = f.getModifiers();
+            if(Modifier.isFinal(mods)) continue;
+            if(Modifier.isStatic(mods)) continue;
+            if(Modifier.isVolatile(mods)) continue;
+
+            ColumnAnnotations annotations = new ColumnAnnotations(f);
+            if(annotations.getIgnored() != null) continue;
+
             String columnName = f.getName();
+            if(annotations.getColumn() != null)
+            {
+                columnName = annotations.getColumn().name();
+                if(columnName == null || columnName.equals(""))
+                    throw new Exception("Invalid column name for field " + cls.getName() + "." + f.getName());
+            }
             ColumnType columnType = ColumnType.Unknown;
             Class type = f.getType();
-            Required requiredAno = f.getAnnotation(Required.class);
-            boolean canBeNull = requiredAno == null;
+            boolean canBeNull = annotations.getRequired() == null;
             Column column = null;
             if(type == int.class)
             {
@@ -128,8 +143,8 @@ public class MetadataStore {
             IValueSetter setter = null;
             IValueGetter getter = null;
             IValueAccessor valueAccessor = null;
-            Setter setterAno = f.getAnnotation(sk.tuke.mp.persistence.annotations.Setter.class);
-            Getter getterAno = f.getAnnotation(sk.tuke.mp.persistence.annotations.Getter.class);
+            Setter setterAno = annotations.getSetter();
+            Getter getterAno = annotations.getGetter();
             if(setterAno != null)
             {
                 Method setterMethod =  cls.getDeclaredMethod(setterAno.methodName(), type);
