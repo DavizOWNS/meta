@@ -2,14 +2,17 @@ package sk.tuke.mp.persistence;
 
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.LazyLoader;
-import sk.tuke.mp.persistence.model.Column;
-import sk.tuke.mp.persistence.model.ColumnType;
+import sk.tuke.mp.persistence.infrastructure.DatabaseModel;
+import sk.tuke.mp.persistence.infrastructure.Entity;
+import sk.tuke.mp.persistence.infrastructure.IModelBuilder;
+import sk.tuke.mp.persistence.infrastructure.Property;
+import sk.tuke.mp.persistence.model.*;
 import sk.tuke.mp.persistence.valueAccess.IValueAccessor;
-import sk.tuke.mp.persistence.model.Table;
 import sk.tuke.mp.persistence.sql.IColumnValue;
 import sk.tuke.mp.persistence.sql.QueryBuilder;
 import sk.tuke.mp.persistence.sql.SqlCodes;
 
+import java.lang.reflect.InvocationTargetException;
 import java.security.InvalidParameterException;
 import java.sql.*;
 import java.util.*;
@@ -28,11 +31,30 @@ public class ReflectivePersistenceManager implements PersistenceManager {
 
     public ReflectivePersistenceManager(Connection connection, Class... classes) {
         this.connection = connection;
-
         isInitialized = false;
         objectFactory = new ObjectFactory();
         metaStore = new MetadataStore(objectFactory);
         objectTracker = new ObjectTracker();
+
+        DatabaseModel dbModel = null;
+        try {
+            DatabaseModel.Builder modelBuilder = new DatabaseModel.Builder();
+            Class modelSnapshotCls = Class.forName("sk.tuke.mp.persistence.generated.ModelSnapshot");
+            Object modelSnapshot = modelSnapshotCls.newInstance();
+            modelSnapshotCls.getMethod("configureModel", IModelBuilder.class).invoke(modelSnapshot, modelBuilder);
+
+            dbModel = modelBuilder.build();
+        } catch (ClassNotFoundException | InstantiationException | IllegalAccessException | NoSuchMethodException | InvocationTargetException e) {
+            e.printStackTrace();
+        }
+        for(Entity entity : dbModel.getEntities())
+        {
+            Class cls = entity.getEntityType();
+            for(Property property : entity.getProperties())
+            {
+                Class propCls = property.getPropertyType();
+            }
+        }
 
         try {
             metaStore.registerTablesForTypes(Arrays.asList(classes));

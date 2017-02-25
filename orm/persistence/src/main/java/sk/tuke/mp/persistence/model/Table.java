@@ -36,7 +36,7 @@ public class Table {
 
     @Override
     public String toString() {
-        return "Table[" + getName() + "]";
+        return "Entity[" + getName() + "]";
     }
 
     public static class Builder

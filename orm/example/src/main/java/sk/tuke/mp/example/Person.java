@@ -1,16 +1,24 @@
 package sk.tuke.mp.example;
 
-import sk.tuke.mp.persistence.annotations.Setter;
-import sk.tuke.mp.persistence.annotations.Table;
+import sk.tuke.mp.persistence.annotations.Column;
+import sk.tuke.mp.persistence.annotations.Entity;
+import sk.tuke.mp.persistence.annotations.Id;
+import sk.tuke.mp.persistence.annotations.LazyFetch;
 
-@Table(name = "People")
+@Entity(name = "People")
 public class Person implements IPerson{
+    @Id
+    @Column(required = true)
     private int id;
+    @Column(required = true, maxLength = 20)
     private String surname;
-    @Setter(methodName = "setName")
+    @Column(getter = "getName", maxLength = 20)
     private String name;
+    @Column()
     private int age;
 
+    @LazyFetch(targetEntity = Department.class)
+    @Column(name = "dep")
     private IDepartment department;
 
     public Person(String surname, String name, int age) {

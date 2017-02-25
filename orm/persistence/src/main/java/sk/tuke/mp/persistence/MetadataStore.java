@@ -1,9 +1,7 @@
 package sk.tuke.mp.persistence;
 
-import sk.tuke.mp.persistence.annotations.ColumnAnnotations;
-import sk.tuke.mp.persistence.annotations.Getter;
-import sk.tuke.mp.persistence.annotations.Required;
-import sk.tuke.mp.persistence.annotations.Setter;
+import sk.tuke.mp.persistence.annotations.*;
+import sk.tuke.mp.persistence.infrastructure.DatabaseModel;
 import sk.tuke.mp.persistence.model.Column;
 import sk.tuke.mp.persistence.model.ColumnType;
 import sk.tuke.mp.persistence.valueAccess.*;
@@ -28,6 +26,11 @@ public class MetadataStore {
         tableMap = new HashMap<>();
         valueAccessorMap = new HashMap<>();
         this.objectFactory = objectFactory;
+    }
+
+    public static MetadataStore from(DatabaseModel dbModel)
+    {
+        return null;
     }
 
     public void registerTablesForTypes(List<Class> types) throws Exception
@@ -67,7 +70,8 @@ public class MetadataStore {
             throw new Exception("Type " + cls.getName() + " does not have parameterless constructor");
 
         String tableName = cls.getSimpleName();
-        sk.tuke.mp.persistence.annotations.Table tableAno = (sk.tuke.mp.persistence.annotations.Table) cls.getAnnotation(sk.tuke.mp.persistence.annotations.Table.class);
+        Entity tableAno = (Entity) cls.getAnnotation(Entity.class);
+
         if(tableAno != null)
         {
             tableName = tableAno.name();
@@ -81,32 +85,32 @@ public class MetadataStore {
             if(Modifier.isStatic(mods)) continue;
             if(Modifier.isVolatile(mods)) continue;
 
-            ColumnAnnotations annotations = new ColumnAnnotations(f);
-            if(annotations.getIgnored() != null) continue;
+            sk.tuke.mp.persistence.annotations.Column columnAno = (sk.tuke.mp.persistence.annotations.Column)f.getAnnotation(sk.tuke.mp.persistence.annotations.Column.class);
+            if(columnAno == null) continue;
 
             String columnName = f.getName();
-            if(annotations.getColumn() != null)
-            {
-                columnName = annotations.getColumn().name();
-                if(columnName == null || columnName.equals(""))
-                    throw new Exception("Invalid column name for field " + cls.getName() + "." + f.getName());
-            }
+            if(!Objects.equals(columnAno.name(), ""))
+                columnName = columnAno.name();
+
             ColumnType columnType = ColumnType.Unknown;
             Class type = f.getType();
-            boolean canBeNull = annotations.getRequired() == null;
+            boolean canBeNull = !columnAno.required();
             Column column = null;
-            if(type == int.class)
-            {
-                columnType = ColumnType.INT;
-                if(Objects.equals(columnName, "id"))
-                    column = tableBuilder.addPrimaryKeyColumn();
-                else
+            if(type.isPrimitive()) {
+                if (type == int.class) {
+                    columnType = ColumnType.INT;
+                    if (Objects.equals(columnName, "id"))
+                        column = tableBuilder.addPrimaryKeyColumn();
+                    else
+                        column = tableBuilder.addColumn(columnName, columnType, canBeNull);
+                } else if (type == double.class) {
+                    columnType = ColumnType.DOUBLE;
                     column = tableBuilder.addColumn(columnName, columnType, canBeNull);
-            }
-            else if(type == double.class)
-            {
-                columnType = ColumnType.DOUBLE;
-                column = tableBuilder.addColumn(columnName, columnType, canBeNull);
+                }
+                else
+                {
+                    throw new Exception("Unsupported primitive type: " + type.getCanonicalName());
+                }
             }
             else if(type == String.class)
             {
@@ -143,11 +147,9 @@ public class MetadataStore {
             IValueSetter setter = null;
             IValueGetter getter = null;
             IValueAccessor valueAccessor = null;
-            Setter setterAno = annotations.getSetter();
-            Getter getterAno = annotations.getGetter();
-            if(setterAno != null)
+            if(!Objects.equals(columnAno.setter(), ""))
             {
-                Method setterMethod =  cls.getDeclaredMethod(setterAno.methodName(), type);
+                Method setterMethod =  cls.getDeclaredMethod(columnAno.setter(), type);
                 if(setterMethod == null)
                 {
                     throw new Exception("Setter method for field " + f.getName() + " not found");
@@ -158,9 +160,9 @@ public class MetadataStore {
             {
                 setter = new FieldValueSetter(f);
             }
-            if(getterAno != null)
+            if(!Objects.equals(columnAno.getter(), ""))
             {
-                Method getterMethod = cls.getDeclaredMethod(getterAno.methodName(), type);
+                Method getterMethod = cls.getDeclaredMethod(columnAno.getter());
                 if(getterMethod == null)
                 {
                     throw new Exception("Getter method for field " + f.getName() + " not found");

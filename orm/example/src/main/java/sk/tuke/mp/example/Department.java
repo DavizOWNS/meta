@@ -1,12 +1,18 @@
 package sk.tuke.mp.example;
 
-import sk.tuke.mp.persistence.annotations.Required;
 
+import sk.tuke.mp.persistence.annotations.Column;
+import sk.tuke.mp.persistence.annotations.Entity;
+import sk.tuke.mp.persistence.annotations.Id;
+
+@Entity(name = "Departments")
 public class Department implements IDepartment{
+    @Id
+    @Column(required = true)
 	private int id;
-    @Required
+    @Column(required = true, maxLength = 20)
     private String name;
-    @Required
+    @Column(required = true, maxLength = 10)
     private String code;
 
     public Department() {

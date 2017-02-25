@@ -6,14 +6,10 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Created by DAVID on 22.2.2017.
+ * Created by DAVID on 24.2.2017.
  */
-@Target(ElementType.FIELD)
 @Retention(RetentionPolicy.RUNTIME)
-public @interface Column {
-    String name() default "";
-    boolean required() default false;
-    String getter() default "";
-    String setter() default "";
-    int maxLength() default 50;
+@Target(ElementType.FIELD)
+public @interface LazyFetch {
+    Class targetEntity();
 }
