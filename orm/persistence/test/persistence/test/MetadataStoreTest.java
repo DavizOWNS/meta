@@ -24,12 +24,6 @@ public class MetadataStoreTest {
     }
 
     @org.junit.Test
-    public void registerTablesForTypes() throws Exception {
-        MetadataStore store = new MetadataStore(new ObjectFactory());
-        store.registerTablesForTypes(Arrays.asList(Item.class));
-    }
-
-    @org.junit.Test
     public void getTable() throws Exception {
 
     }

@@ -8,6 +8,25 @@ import java.util.*;
 public class DatabaseModel {
     private List<Entity> entities;
 
+    public Entity entity(String name)
+    {
+        for(Entity et : entities)
+            if(et.getName().equals(name)) return et;
+
+        return null;
+    }
+    public Entity entity(Class type)
+    {
+        for(Entity et : entities)
+        {
+            if(type.isAssignableFrom(et.getEntityType()))
+
+                return et;
+        }
+
+        return null;
+    }
+
     public Iterable<Entity> getEntities() {
         return entities;
     }
@@ -37,11 +56,11 @@ public class DatabaseModel {
 
         @Override
         public Entity.Builder entity(String typeName, String name) {
-            if(entities.containsKey(typeName))
-                return entities.get(typeName);
+            if(entities.containsKey(name))
+                return entities.get(name);
 
             Entity.Builder b = new Entity.Builder(typeName, name);
-            entities.put(typeName, b);
+            entities.put(name, b);
             return b;
         }
     }

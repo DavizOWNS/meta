@@ -25,18 +25,13 @@ public class ReflectivePersistenceManager implements PersistenceManager {
     private Connection connection;
     private boolean isInitialized;
 
-    private ObjectFactory objectFactory;
-    private MetadataStore metaStore;
-    private ObjectTracker objectTracker;
+    private DatabaseModel dbModel;
+    private DatabaseModelCache dbModelCache;
 
-    public ReflectivePersistenceManager(Connection connection, Class... classes) {
+    public ReflectivePersistenceManager(Connection connection) {
         this.connection = connection;
         isInitialized = false;
-        objectFactory = new ObjectFactory();
-        metaStore = new MetadataStore(objectFactory);
-        objectTracker = new ObjectTracker();
 
-        DatabaseModel dbModel = null;
         try {
             DatabaseModel.Builder modelBuilder = new DatabaseModel.Builder();
             Class modelSnapshotCls = Class.forName("sk.tuke.mp.persistence.generated.ModelSnapshot");
@@ -47,48 +42,37 @@ public class ReflectivePersistenceManager implements PersistenceManager {
         } catch (ClassNotFoundException | InstantiationException | IllegalAccessException | NoSuchMethodException | InvocationTargetException e) {
             e.printStackTrace();
         }
-        for(Entity entity : dbModel.getEntities())
-        {
-            Class cls = entity.getEntityType();
-            for(Property property : entity.getProperties())
-            {
-                Class propCls = property.getPropertyType();
-            }
-        }
-
-        try {
-            metaStore.registerTablesForTypes(Arrays.asList(classes));
-        } catch (Exception e) {
-            throw new IllegalArgumentException("Provided types are invalid. Parameter: classes", e);
-        }
+        dbModelCache = new DatabaseModelCache(dbModel);
     }
 
     @Override
     public void initializeDatabase() {
-        for(Table t : metaStore.getTables())
+        for(Entity e : dbModel.getEntities())
         {
             try {
-                createTable(t);
-            } catch (SQLException e) {
-                e.printStackTrace();
+                createTable(e);
+            } catch (SQLException ex) {
+                ex.printStackTrace();
                 return;
             }
         }
 
         isInitialized = true;
     }
-    private void createTable(Table table) throws SQLException {
-        for (Column c : table.getColumns())
+    private void createTable(Entity entity) throws SQLException {
+        for (Property p : entity.getProperties())
         {
-            if(c.getForeignKeyReference() != null)
+            if(p.getReference() != null)
             {
-                createTable(c.getForeignKeyReference().getTable());
+                createTable(dbModel.entity(p.getReference().getEntityName()));
             }
         }
 
         try(Statement statement = connection.createStatement())
         {
-            statement.executeUpdate(QueryBuilder.createTableQuery(table));
+            String query = QueryBuilder.createTableQuery(entity);
+            System.out.println(query);
+            statement.executeUpdate(query);
         }
         catch (SQLException ex)
         {
@@ -107,31 +91,31 @@ public class ReflectivePersistenceManager implements PersistenceManager {
     public <T> List<T> getAll(Class<T> clazz) throws PersistenceException {
         throwIfNotInitialized();
 
-        Table table = metaStore.getTable(clazz);
-        if(table == null)
+        Entity entity = dbModel.entity(clazz);
+        if(entity == null)
             throw new PersistenceException("Provided class is not supported: " + clazz.getName());
 
-        try(PreparedStatement statement = connection.prepareStatement("SELECT * FROM " + table.getName()))
+        try(PreparedStatement statement = connection.prepareStatement("SELECT * FROM " + entity.getName()))
         {
             ResultSet result =  statement.executeQuery();
 
             List<T> objects = new ArrayList<>();
             while(result.next())
             {
-                T instance = (T) objectFactory.createObject(clazz);
+                T instance = (T) dbModelCache.createObject(entity);
 
-                for(Column c : table.getColumns())
+                for(Property p : entity.getProperties())
                 {
-                    IValueAccessor valueAccessor = metaStore.getValueAccessorForColumn(c);
+                    IValueAccessor valueAccessor = dbModelCache.getValueAccessor(p);
 
                     Object val = null;
-                    if(c.getForeignKeyReference() != null)
+                    if(p.getReference() != null)
                     {
-                        int id = result.getInt(c.getName());
+                        int id = result.getInt(p.getColumnName());
                         val = get(valueAccessor.getValueType(), id);
                     }
                     else {
-                        val = extractValue(result, c.getName(), c.getType());
+                        val = extractValue(result, p);
                     }
 
 
@@ -171,11 +155,11 @@ public class ReflectivePersistenceManager implements PersistenceManager {
     }
     private <T> T getFromDb(Class<T> type, int id) throws PersistenceException
     {
-        Table table = metaStore.getTable(type);
-        if(table == null)
+        Entity entity = dbModel.entity(type);
+        if(entity == null)
             throw new PersistenceException("Provided class is not supported: " + type.getName());
 
-        try(PreparedStatement statement = connection.prepareStatement("SELECT * FROM " + table.getName() + " WHERE id = ?"))
+        try(PreparedStatement statement = connection.prepareStatement("SELECT * FROM " + entity.getName() + " WHERE id = ?"))
         {
             statement.setInt(1, id);
             ResultSet result =  statement.executeQuery();
@@ -184,20 +168,20 @@ public class ReflectivePersistenceManager implements PersistenceManager {
                 return null;
             }
 
-            T instance = (T) objectFactory.createObject(type);
+            T instance = (T) dbModelCache.createObject(entity);
 
-            for(Column c : table.getColumns())
+            for(Property p : entity.getProperties())
             {
-                IValueAccessor valueAccessor = metaStore.getValueAccessorForColumn(c);
+                IValueAccessor valueAccessor = dbModelCache.getValueAccessor(p);
 
-                if(c.getForeignKeyReference() != null)
+                if(p.getReference() != null)
                 {
-                    int refId = result.getInt(c.getName());
+                    int refId = result.getInt(p.getColumnName());
                     valueAccessor.set(instance, get(valueAccessor.getValueType(), refId));
                 }
                 else
                 {
-                    Object val = extractValue(result, c.getName(), c.getType());
+                    Object val = extractValue(result, p);
 
                     valueAccessor.set(instance, val);
                 }
@@ -215,17 +199,24 @@ public class ReflectivePersistenceManager implements PersistenceManager {
     public <T> List<T> getBy(Class<T> type, String fieldName, Object value) {
         throwIfNotInitialized();
 
-        Table table = metaStore.getTable(type);
-        if(table == null)
+        Entity entity = dbModel.entity(type);
+        if(entity == null)
             return null;
 
         boolean isFieldNameValid = false;
-        for(Column c : table.getColumns())
-            if(c.getName().equals(fieldName)) isFieldNameValid = true;
+        String columnName = null;
+        for(Property p : entity.getProperties()) {
+            if (p.getFieldName().equals(fieldName))
+            {
+                isFieldNameValid = true;
+                columnName = p.getColumnName();
+                break;
+            }
+        }
         if(!isFieldNameValid)
             return null;
 
-        try(PreparedStatement statement = connection.prepareStatement("SELECT * FROM " + table.getName() + " WHERE " + fieldName + " = ?"))
+        try(PreparedStatement statement = connection.prepareStatement("SELECT * FROM " + entity.getName() + " WHERE " + columnName + " = ?"))
         {
             statement.setObject(1, value);
             ResultSet result =  statement.executeQuery();
@@ -233,16 +224,16 @@ public class ReflectivePersistenceManager implements PersistenceManager {
             List<T> objects = new ArrayList<>();
             while(result.next())
             {
-                T instance = (T) objectFactory.createObject(type);
+                T instance = (T) dbModelCache.createObject(entity);
 
-                for(Column c : table.getColumns())
+                for(Property p : entity.getProperties())
                 {
-                    IValueAccessor valueAccessor = metaStore.getValueAccessorForColumn(c);
+                    IValueAccessor valueAccessor = dbModelCache.getValueAccessor(p);
 
                     Object val = null;
-                    if(c.getForeignKeyReference() != null)
+                    if(p.getReference() != null)
                     {
-                        int id = result.getInt(c.getName());
+                        int id = result.getInt(p.getColumnName());
                         try {
                             val = get(valueAccessor.getValueType(), id);
                         } catch (PersistenceException e) {
@@ -251,7 +242,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
                         }
                     }
                     else {
-                        val = extractValue(result, c.getName(), c.getType());
+                        val = extractValue(result, p);
                     }
 
 
@@ -274,17 +265,19 @@ public class ReflectivePersistenceManager implements PersistenceManager {
     public int save(Object value) throws PersistenceException {
         throwIfNotInitialized();
 
-        Table table = metaStore.getTable(value.getClass());
-        if(table == null) throw new PersistenceException("Provided class is not supported: " + value.getClass().getName());
-        Column primaryKeyColumn = table.primaryKeyColumn();
-        IValueAccessor idAccessor = metaStore.getValueAccessorForColumn(primaryKeyColumn);
+        Entity entity = dbModel.entity(value.getClass());
+        if(entity == null)
+            throw new PersistenceException("Provided class is not supported: " + value.getClass().getName());
+
+        Property primaryKeyProp = entity.primaryKeyProp();
+        IValueAccessor idAccessor = dbModelCache.getValueAccessor(primaryKeyProp);
 
         if((int)idAccessor.get(value) != 0)
         {
-            return updateObject(value, table);
+            return updateObject(value, entity);
         }
 
-        return insertObject(value, table);
+        return insertObject(value, entity);
     }
 
     /**
@@ -292,26 +285,26 @@ public class ReflectivePersistenceManager implements PersistenceManager {
      * @param obj the object to insert
      * @return id of inserted object
      */
-    private int insertObject(Object obj, Table table) throws PersistenceException {
-        String query = QueryBuilder.createInsertQuery(table, Collections.singletonList(obj), new IColumnValue() {
+    private int insertObject(Object obj, Entity entity) throws PersistenceException {
+        String query = QueryBuilder.createInsertQuery(entity, Collections.singletonList(obj), new IColumnValue() {
             @Override
-            public Object getValue(Object obj, Column column) {
-                IValueAccessor valueAccessor = metaStore.getValueAccessorForColumn(column);
+            public Object getValue(Object obj, Property property) {
+                IValueAccessor valueAccessor = dbModelCache.getValueAccessor(property);
 
-                if(column.getForeignKeyReference() != null)
+                if(property.getReference() != null)
                 {
                     try {
                         Object objRef = valueAccessor.get(obj);
                         if(objRef == null) return null;
-                        Table refTable = metaStore.getTable(objRef.getClass());
-                        int id = (int) metaStore.getValueAccessorForColumn(refTable.primaryKeyColumn()).get(objRef);
+                        Entity refEt = dbModel.entity(objRef.getClass());
+                        int id = (int) dbModelCache.getValueAccessor(refEt.primaryKeyProp()).get(objRef);
                         if(id != 0)
                         {
-                            return updateObject(objRef, refTable);
+                            return updateObject(objRef, refEt);
                         }
                         else
                         {
-                            return insertObject(objRef, refTable);
+                            return insertObject(objRef, refEt);
                         }
                     } catch (PersistenceException e) {
                         e.printStackTrace(); //should not happen
@@ -339,7 +332,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
             generatedKeys.next();
             int id = generatedKeys.getInt(1);
 
-            metaStore.getValueAccessorForColumn(table.primaryKeyColumn()).set(obj, id);
+            dbModelCache.getValueAccessor(entity.primaryKeyProp()).set(obj, id);
 
             return id;
         }
@@ -348,22 +341,22 @@ public class ReflectivePersistenceManager implements PersistenceManager {
             throw new PersistenceException("Could not insert object of type " + obj.getClass(), ex);
         }
     }
-    private int updateObject(Object obj, Table table) throws PersistenceException
+    private int updateObject(Object obj, Entity entity) throws PersistenceException
     {
-        int id = (int) metaStore.getValueAccessorForColumn(table.primaryKeyColumn()).get(obj);
+        int id = (int) dbModelCache.getValueAccessor(entity.primaryKeyProp()).get(obj);
 
         StringBuilder updateBuilder = new StringBuilder("UPDATE ");
-        updateBuilder.append(table.getName());
+        updateBuilder.append(entity.getName());
         updateBuilder.append(" SET ");
         boolean isFirst = true;
-        for(Column c : table.getColumns())
+        for(Property p : entity.getProperties())
         {
-            if(c.isPrimaryKey()) continue;
+            if(p.isPrimaryKey()) continue;
 
             if(!isFirst)
                 updateBuilder.append(',');
 
-            updateBuilder.append(c.getName()).append('=').append('?');
+            updateBuilder.append(p.getColumnName()).append('=').append('?');
 
             isFirst = false;
         }
@@ -373,24 +366,25 @@ public class ReflectivePersistenceManager implements PersistenceManager {
         {
             PreparedStatement statement = connection.prepareStatement(updateBuilder.toString());
             int idx = 1;
-            for(Column c : table.getColumns())
+            for(Property p : entity.getProperties())
             {
-                if(c.isPrimaryKey()) continue;
-                Object value = metaStore.getValueAccessorForColumn(c).get(obj);
+                if(p.isPrimaryKey()) continue;
+                Object value = dbModelCache.getValueAccessor(p).get(obj);
                 if(value == null) {
                     statement.setNull(idx, java.sql.Types.NULL);
                     continue;
                 }
-                if(c.getForeignKeyReference() != null) {
-                    Object refObj = metaStore.getValueAccessorForColumn(c).get(obj);
-                    int refId = (int) metaStore.getValueAccessorForColumn(c.getForeignKeyReference().getColumn()).get(refObj);
+                if(p.getReference() != null) {
+                    Object refObj = dbModelCache.getValueAccessor(p).get(obj);
+                    Entity refEt = dbModel.entity(p.getReference().getEntityName());
+                    int refId = (int) dbModelCache.getValueAccessor(refEt.primaryKeyProp()).get(refObj);
                     if(refId == 0)
                     {
-                        value = insertObject(refObj, c.getForeignKeyReference().getTable());
+                        value = insertObject(refObj, refEt);
                     }
                     else
                     {
-                        value = updateObject(refObj, c.getForeignKeyReference().getTable());
+                        value = updateObject(refObj, refEt);
                     }
                 }
 
@@ -417,6 +411,18 @@ public class ReflectivePersistenceManager implements PersistenceManager {
                 return resultSet.getDouble(columnName);
             case STRING:
                 return resultSet.getString(columnName);
+        }
+
+        return null;
+    }
+    private Object extractValue(ResultSet resultSet, Property prop) throws SQLException {
+        switch (prop.getPropertyType().getCanonicalName()) {
+            case "java.lang.Integer":
+                return resultSet.getInt(prop.getColumnName());
+            case "java.lang.Double":
+                return resultSet.getDouble(prop.getColumnName());
+            case "java.lang.String":
+                return resultSet.getString(prop.getColumnName());
         }
 
         return null;

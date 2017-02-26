@@ -3,7 +3,8 @@ package sk.tuke.mp.example;
 import sk.tuke.mp.persistence.PersistenceManager;
 import sk.tuke.mp.persistence.ReflectivePersistenceManager;
 
-import java.lang.reflect.Field;
+import java.io.PrintWriter;
+import java.io.Writer;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.util.List;
@@ -14,7 +15,7 @@ public class Main {
         //Connection conn = DriverManager.getConnection("jdbc:derby:orm/test.db;create=true");
         Connection conn = DriverManager.getConnection("jdbc:derby:memory:test.db;create=true");
 
-        PersistenceManager manager = new ReflectivePersistenceManager(conn, Person.class, Department.class);
+        PersistenceManager manager = new ReflectivePersistenceManager(conn);
 
         manager.initializeDatabase();
 

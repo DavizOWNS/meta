@@ -1,7 +1,8 @@
 package sk.tuke.mp.persistence;
 
 import sk.tuke.mp.persistence.annotations.*;
-import sk.tuke.mp.persistence.infrastructure.DatabaseModel;
+import sk.tuke.mp.persistence.annotations.Entity;
+import sk.tuke.mp.persistence.infrastructure.*;
 import sk.tuke.mp.persistence.model.Column;
 import sk.tuke.mp.persistence.model.ColumnType;
 import sk.tuke.mp.persistence.valueAccess.*;
@@ -21,19 +22,34 @@ public class MetadataStore {
     private ObjectFactory objectFactory;
     private Map<Column, IValueAccessor> valueAccessorMap;
 
-    public MetadataStore(ObjectFactory objectFactory) {
+    private MetadataStore(ObjectFactory objectFactory) {
         availableTypes = new ArrayList<>();
         tableMap = new HashMap<>();
         valueAccessorMap = new HashMap<>();
         this.objectFactory = objectFactory;
     }
 
-    public static MetadataStore from(DatabaseModel dbModel)
+    public static MetadataStore from(ObjectFactory objectFactory, DatabaseModel dbModel)
     {
-        return null;
+        MetadataStore ms = new MetadataStore(objectFactory);
+        return ms;
     }
 
-    public void registerTablesForTypes(List<Class> types) throws Exception
+    private void createTable(DatabaseModel dbModel, sk.tuke.mp.persistence.infrastructure.Entity entity, Map<sk.tuke.mp.persistence.infrastructure.Entity, Table> tableLookup,
+                             Set<sk.tuke.mp.persistence.infrastructure.Entity> visitedEntities) throws Exception {
+        visitedEntities.add(entity);
+
+        if(!objectFactory.registerType(entity.getEntityType()))
+            throw new Exception("Type " + entity.getEntityType().getName() + " does not have parameterless constructor");
+
+        Table.Builder tableBuilder = new Table.Builder(entity.getName());
+        for(Property prop : entity.getProperties())
+        {
+
+        }
+    }
+
+    private void registerTablesForTypes(List<Class> types) throws Exception
     {
         for(Class type : types)
         {

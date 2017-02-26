@@ -6,6 +6,25 @@ import java.util.HashMap;
  * Created by DAVID on 25.2.2017.
  */
 public class Property {
+    public static class Reference
+    {
+        private String entityName;
+        private String propertyName;
+
+        public Reference(String entityName, String propertyName) {
+            this.entityName = entityName;
+            this.propertyName = propertyName;
+        }
+
+        public String getEntityName() {
+            return entityName;
+        }
+
+        public String getPropertyName() {
+            return propertyName;
+        }
+    }
+
     private String name;
     private boolean isPrimaryKey = false;
     private boolean isRequired = false;
@@ -13,6 +32,8 @@ public class Property {
     private Class propertyType;
     private Class lazyImplementation;
     private String columnName;
+    private Reference reference;
+    private Entity entity;
 
     private Property(String typeName, String name) {
         this.name = name;
@@ -39,7 +60,7 @@ public class Property {
         return name;
     }
 
-    public String getName() {
+    public String getFieldName() {
         return name;
     }
 
@@ -52,17 +73,26 @@ public class Property {
         return lazyImplementation;
     }
 
+    public Reference getReference() {
+        return reference;
+    }
+
     public Class getPropertyType() {
         return propertyType;
+    }
+
+    public Entity getEntity() {
+        return entity;
     }
 
     public static class Builder
     {
         private Property prop;
 
-        public Builder(String typeName, String name)
+        public Builder(Entity entity, String typeName, String name)
         {
             prop = new Property(typeName, name);
+            prop.entity = entity;
         }
 
         public Property.Builder setPrimaryKey()
@@ -92,6 +122,12 @@ public class Property {
         public Property.Builder setColumnName(String name)
         {
             prop.columnName = name;
+
+            return this;
+        }
+        public Property.Builder references(String entityName, String propertyName)
+        {
+            prop.reference = new Reference(entityName, propertyName);
 
             return this;
         }

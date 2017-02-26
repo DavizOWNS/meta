@@ -8,6 +8,7 @@ import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.*;
 import javax.lang.model.type.MirroredTypeException;
+import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
@@ -71,7 +72,7 @@ public class EntitiesProcessor extends AbstractProcessor {
 
             TypeElement typeElement = (TypeElement) annotatedElement;
 
-            configureMethodBuilder.addCode(createCodeBlock(typeElement));
+            configureMethodBuilder.addCode(createCodeBlock(typeElement, roundEnv));
             configureMethodBuilder.addCode("\n");
         }
 
@@ -103,7 +104,7 @@ public class EntitiesProcessor extends AbstractProcessor {
                 .addModifiers(Modifier.FINAL, Modifier.PUBLIC)
                 .addParameter(IModelBuilder.class, "modelBuilder");
     }
-    private CodeBlock createCodeBlock(TypeElement typeElement)
+    private CodeBlock createCodeBlock(TypeElement typeElement, RoundEnvironment roundEnv)
     {
         Entity ea = typeElement.getAnnotation(Entity.class);
         CodeBlock.Builder builder = CodeBlock.builder();
@@ -123,15 +124,39 @@ public class EntitiesProcessor extends AbstractProcessor {
             }
             if(id != null)
                 propConfig.append(".setPrimaryKey()");
-            if(lazy != null)
+            if(field.asType().getKind() == TypeKind.DECLARED)
             {
-                try {
-                    lazy.targetEntity();
-                } catch (MirroredTypeException e)
+                String className = null;
+                if(lazy != null)
                 {
-                    propConfig.append(".setLazyImplementation(").append(e.getTypeMirror().toString()).append(".class").append(")");
+                    try {
+                        lazy.targetEntity();
+                    } catch (MirroredTypeException e)
+                    {
+                        className = e.getTypeMirror().toString();
+                        propConfig.append(".setLazyImplementation(").append(className).append(".class").append(")");
+                    }
+                }
+
+                if(className == null)
+                    className = field.asType().toString();
+
+                Element classElement = null;
+                for(Element el : roundEnv.getElementsAnnotatedWith(Entity.class))
+                {
+                    TypeElement te = (TypeElement)el;
+                    if(te.getQualifiedName().toString().equals(className)) {
+                        classElement = te;
+                        break;
+                    }
+                }
+                if(classElement != null) {
+                    String entityName = classElement.getAnnotation(Entity.class).name();
+                    String propertyName = "";
+                    propConfig.append(".references(\"").append(entityName).append("\", \"").append(propertyName).append("\")");
                 }
             }
+
             if(column.required())
             {
                 propConfig.append(".setRequired()");
@@ -153,21 +178,16 @@ public class EntitiesProcessor extends AbstractProcessor {
     }
     private String toCodeName(TypeMirror type)
     {
-        if(type.getKind().isPrimitive())
+        switch(type.getKind())
         {
-            switch(type.getKind())
-            {
-                case INT:
-                    return "java.lang.Integer";
-                case DOUBLE:
-                    return "java.lang.Double";
-                default:
-                    return "ERROR_UNSUPPORTED_TYPE";
-            }
-        }
-        else
-        {
-            return type.toString();
+            case INT:
+                return "java.lang.Integer";
+            case DOUBLE:
+                return "java.lang.Double";
+            case DECLARED:
+                return type.toString();
+            default:
+                return "ERROR_UNSUPPORTED_TYPE";
         }
     }
 

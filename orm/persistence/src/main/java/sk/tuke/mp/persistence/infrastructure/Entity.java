@@ -1,6 +1,7 @@
 package sk.tuke.mp.persistence.infrastructure;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -28,15 +29,16 @@ public class Entity {
 
         public Builder(String typeName, String name)
         {
+            properties = new HashMap<>();
             entity = new Entity(typeName, name);
         }
 
         public Property.Builder property(String propertyType, String propertyName) {
-            Property.Builder prop = properties.get(propertyType);
+            Property.Builder prop = properties.get(propertyName);
             if(prop != null) return prop;
 
-            prop = new Property.Builder(propertyType, propertyName);
-            properties.put(propertyType, prop);
+            prop = new Property.Builder(entity, propertyType, propertyName);
+            properties.put(propertyName, prop);
             return prop;
         }
 
@@ -64,5 +66,16 @@ public class Entity {
     public Iterable<Property> getProperties()
     {
         return properties;
+    }
+
+    public Property primaryKeyProp()
+    {
+        for(Property p : properties)
+        {
+            if(p.isPrimaryKey())
+                return p;
+        }
+
+        return null;
     }
 }

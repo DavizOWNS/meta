@@ -1,5 +1,7 @@
 package sk.tuke.mp.persistence.sql;
 
+import sk.tuke.mp.persistence.infrastructure.Property;
+import sk.tuke.mp.persistence.infrastructure.PropertyAnnotations;
 import sk.tuke.mp.persistence.model.ColumnType;
 
 /**
@@ -18,6 +20,28 @@ public final class SqlTypeConverter {
                 return "DOUBLE";
             case STRING:
                 return "VARCHAR(50)";
+            default:
+                return null;
+        }
+    }
+
+    public static String getSqlTypeName(Property prop)
+    {
+        if(prop.getReference() != null)
+            return "INT";
+
+        switch(prop.getPropertyType().getCanonicalName())
+        {
+            case "java.lang.Integer":
+                return "INT";
+            case "java.lang.Double":
+                return "DOUBLE";
+            case "java.lang.String":
+                Object maxLength = prop.getAnnotation(PropertyAnnotations.MAX_LENGTH);
+                if(maxLength != null)
+                    return "VARCHAR(" + (int)maxLength + ")";
+
+                return "TEXT";
             default:
                 return null;
         }
