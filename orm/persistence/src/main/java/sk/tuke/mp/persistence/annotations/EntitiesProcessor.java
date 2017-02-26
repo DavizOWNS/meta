@@ -72,7 +72,13 @@ public class EntitiesProcessor extends AbstractProcessor {
 
             TypeElement typeElement = (TypeElement) annotatedElement;
 
-            configureMethodBuilder.addCode(createCodeBlock(typeElement, roundEnv));
+            StringBuilder createTableComment = new StringBuilder();
+            createTableComment.append("/*\n");
+            CodeBlock codeBlock = createCodeBlock(typeElement, roundEnv, createTableComment);
+            createTableComment.append("*/\n");
+
+            configureMethodBuilder.addCode(createTableComment.toString());
+            configureMethodBuilder.addCode(codeBlock);
             configureMethodBuilder.addCode("\n");
         }
 
@@ -104,10 +110,11 @@ public class EntitiesProcessor extends AbstractProcessor {
                 .addModifiers(Modifier.FINAL, Modifier.PUBLIC)
                 .addParameter(IModelBuilder.class, "modelBuilder");
     }
-    private CodeBlock createCodeBlock(TypeElement typeElement, RoundEnvironment roundEnv)
+    private CodeBlock createCodeBlock(TypeElement typeElement, RoundEnvironment roundEnv, StringBuilder queryBuilder)
     {
         Entity ea = typeElement.getAnnotation(Entity.class);
         CodeBlock.Builder builder = CodeBlock.builder();
+        queryBuilder.append("CREATE TABLE ").append(ea.name()).append(" (\n");
         for(Element elem : typeElement.getEnclosedElements())
         {
             if(elem.getKind() != ElementKind.FIELD) continue;
@@ -118,12 +125,42 @@ public class EntitiesProcessor extends AbstractProcessor {
             LazyFetch lazy = field.getAnnotation(LazyFetch.class);
 
             StringBuilder propConfig = new StringBuilder();
+            String columnName = field.getSimpleName().toString();
             if(!Objects.equals(column.name(), ""))
             {
                 propConfig.append(".setColumnName(\"").append(column.name()).append("\")");
+                columnName = column.name();
             }
-            if(id != null)
+
+            String sqlType = null;
+            switch(field.asType().toString())
+            {
+                case "java.lang.Integer":
+                    sqlType = "INT";
+                    break;
+                case "java.lang.Double":
+                    sqlType = "DOUBLE";
+                    break;
+                case "java.lang.String":
+                    if(column.maxLength() != 0)
+                        sqlType = "VARCHAR(" + column.maxLength() + ")";
+                    else
+                        sqlType = "TEXT";
+                    break;
+                default:
+                    sqlType = "INT";
+            }
+            queryBuilder.append("\t").append(columnName).append(" ").append(sqlType);
+
+            if(column.required())
+            {
+                propConfig.append(".setRequired()");
+                queryBuilder.append(" NOT NULL");
+            }
+            if(id != null) {
                 propConfig.append(".setPrimaryKey()");
+                queryBuilder.append(" PRIMARY KEY GENERATED ALWAYS AS IDENTITY (START WITH 1, INCREMENT BY 1)");
+            }
             if(field.asType().getKind() == TypeKind.DECLARED)
             {
                 String className = null;
@@ -154,12 +191,8 @@ public class EntitiesProcessor extends AbstractProcessor {
                     String entityName = classElement.getAnnotation(Entity.class).name();
                     String propertyName = "";
                     propConfig.append(".references(\"").append(entityName).append("\", \"").append(propertyName).append("\")");
+                    queryBuilder.append(" REFERENCES ").append(entityName);
                 }
-            }
-
-            if(column.required())
-            {
-                propConfig.append(".setRequired()");
             }
             if(!Objects.equals(column.getter(), ""))
             {
@@ -169,11 +202,15 @@ public class EntitiesProcessor extends AbstractProcessor {
             {
                 //TODO
             }
+            if(column.maxLength() < 0)
+                messager.printMessage(Diagnostic.Kind.WARNING, "maxLength on column " + columnName + " is less than 0. Only values higher or equal to 0 are allowed.");
             propConfig.append(".setAnnotation(\"").append(PropertyAnnotations.MAX_LENGTH).append("\",").append(column.maxLength()).append(")");
 
             builder.addStatement("modelBuilder.entity($S, $S).property($S, $S)" + propConfig.toString(), typeElement.getQualifiedName(), ea.name(), toCodeName(field.asType()), field.getSimpleName().toString());
+            queryBuilder.append("\n");
         }
 
+        queryBuilder.append(")\n");
         return builder.build();
     }
     private String toCodeName(TypeMirror type)

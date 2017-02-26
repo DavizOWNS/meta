@@ -43,7 +43,7 @@ public class DatabaseModelCache {
         else
             implementationType = property.getPropertyType();
         try {
-            IValueAccessor accessor = new ColumnValueAccessor(implementationType,
+            IValueAccessor accessor = new ColumnValueAccessor(property.getPropertyType(),
                     new FieldValueSetter(property.getEntity().getEntityType().getDeclaredField(property.getFieldName())),
                     new FieldValueGetter(property.getEntity().getEntityType().getDeclaredField(property.getFieldName())));
 

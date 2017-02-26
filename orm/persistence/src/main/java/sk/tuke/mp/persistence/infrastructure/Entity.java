@@ -78,4 +78,9 @@ public class Entity {
 
         return null;
     }
+
+    @Override
+    public String toString() {
+        return "Entity[" + name + ']';
+    }
 }

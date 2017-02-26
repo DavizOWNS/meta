@@ -85,6 +85,11 @@ public class Property {
         return entity;
     }
 
+    @Override
+    public String toString() {
+        return "Property[" + entity.getName() + "." + getColumnName() + ']';
+    }
+
     public static class Builder
     {
         private Property prop;

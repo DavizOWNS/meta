@@ -14,7 +14,7 @@ public class Person implements IPerson{
     private String surname;
     @Column(getter = "getName", maxLength = 20)
     private String name;
-    @Column()
+    @Column(name = "years_xp_in_life")
     private int age;
 
     @LazyFetch(targetEntity = Department.class)
