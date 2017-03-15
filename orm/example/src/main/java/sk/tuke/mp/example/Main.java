@@ -32,6 +32,8 @@ public class Main {
         mrkva.setDepartment(marketing);
 
         manager.save(hrasko);
+        hrasko.setAge(55);
+        hrasko.getName();
         manager.save(hrasko);
         manager.save(mrkvicka);
         manager.save(novak);

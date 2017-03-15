@@ -97,7 +97,12 @@ public class EntitiesProcessor extends AbstractProcessor {
             writer.flush();
             writer.close();
 
-        } catch (IOException e) {
+        }
+        catch (FilerException fe)
+        {
+            System.out.println("Could not create file for class ModelSnapshot: " + fe.getMessage());
+        }
+        catch (IOException e) {
             e.printStackTrace();
         }
 

@@ -39,7 +39,12 @@ public class ReflectivePersistenceManager implements PersistenceManager {
             modelSnapshotCls.getMethod("configureModel", IModelBuilder.class).invoke(modelSnapshot, modelBuilder);
 
             dbModel = modelBuilder.build();
-        } catch (ClassNotFoundException | InstantiationException | IllegalAccessException | NoSuchMethodException | InvocationTargetException e) {
+        }
+        catch (InvocationTargetException ie)
+        {
+            ie.getCause().printStackTrace();
+        }
+        catch (ClassNotFoundException | InstantiationException | IllegalAccessException | NoSuchMethodException e) {
             e.printStackTrace();
         }
         dbModelCache = new DatabaseModelCache(dbModel);
