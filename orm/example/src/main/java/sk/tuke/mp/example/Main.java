@@ -32,13 +32,13 @@ public class Main {
         Person mrkva = new Person("Janko", "Mrkva", 33);
         mrkva.setDepartment(marketing);
 
-        manager.save(hrasko);
+        //manager.save(hrasko);
         hrasko.setAge(55);
         hrasko.getName();
-        manager.save(hrasko);
-        manager.save(mrkvicka);
-        manager.save(novak);
-        manager.save(mrkva);
+        //manager.save(hrasko);
+        //manager.save(mrkvicka);
+        //manager.save(novak);
+        //manager.save(mrkva);
 
         List<IPerson> people = manager.getAll(IPerson.class);
         for (IPerson person : people) {
