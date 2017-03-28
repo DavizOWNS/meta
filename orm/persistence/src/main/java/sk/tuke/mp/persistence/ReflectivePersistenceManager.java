@@ -2,6 +2,7 @@ package sk.tuke.mp.persistence;
 
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.LazyLoader;
+import sk.tuke.mp.persistence.annotations.Id;
 import sk.tuke.mp.persistence.infrastructure.DatabaseModel;
 import sk.tuke.mp.persistence.infrastructure.Entity;
 import sk.tuke.mp.persistence.infrastructure.IModelBuilder;
@@ -39,6 +40,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
             modelSnapshotCls.getMethod("configureModel", IModelBuilder.class).invoke(modelSnapshot, modelBuilder);
 
             dbModel = modelBuilder.build();
+            System.out.println("Database model created successfully");
         }
         catch (InvocationTargetException ie)
         {

@@ -15,6 +15,7 @@ public class Main {
         //Connection conn = DriverManager.getConnection("jdbc:derby:orm/test.db;create=true");
         Connection conn = DriverManager.getConnection("jdbc:derby:memory:test.db;create=true");
 
+        System.out.println("Creating persistence manager");
         PersistenceManager manager = new ReflectivePersistenceManager(conn);
 
         manager.initializeDatabase();

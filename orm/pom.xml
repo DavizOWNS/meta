@@ -32,6 +32,30 @@
                     <target>1.8</target>
                 </configuration>
             </plugin>
+            <!--<plugin>-->
+                <!--<groupId>org.codehaus.mojo</groupId>-->
+                <!--<artifactId>aspectj-maven-plugin</artifactId>-->
+                <!--<version>1.10</version>-->
+                <!--<configuration>-->
+                    <!--<complianceLevel>1.8</complianceLevel>-->
+                    <!--<source>1.8</source>-->
+                    <!--<target>1.8</target>-->
+                    <!--&lt;!&ndash;<aspectLibraries>&ndash;&gt;-->
+                    <!--&lt;!&ndash;<aspectLibrary>&ndash;&gt;-->
+                    <!--&lt;!&ndash;<groupId>sk.tuke.mp1</groupId>&ndash;&gt;-->
+                    <!--&lt;!&ndash;<artifactId>aspect-lib</artifactId>&ndash;&gt;-->
+                    <!--&lt;!&ndash;</aspectLibrary>&ndash;&gt;-->
+                    <!--&lt;!&ndash;</aspectLibraries>&ndash;&gt;-->
+                <!--</configuration>-->
+                <!--<executions>-->
+                    <!--<execution>-->
+                        <!--<phase>process-sources</phase>-->
+                        <!--<goals>-->
+                            <!--<goal>compile</goal>-->
+                        <!--</goals>-->
+                    <!--</execution>-->
+                <!--</executions>-->
+            <!--</plugin>-->
         </plugins>
     </build>
 </project>
