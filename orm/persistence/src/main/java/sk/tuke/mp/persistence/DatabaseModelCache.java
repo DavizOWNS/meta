@@ -8,6 +8,8 @@ import sk.tuke.mp.persistence.valueAccess.FieldValueGetter;
 import sk.tuke.mp.persistence.valueAccess.FieldValueSetter;
 import sk.tuke.mp.persistence.valueAccess.IValueAccessor;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -26,8 +28,10 @@ public class DatabaseModelCache {
     public Object createObject(Entity entity)
     {
         try {
-            return entity.getEntityType().newInstance();
-        } catch (InstantiationException | IllegalAccessException e) {
+            Constructor cnst = entity.getEntityType().getDeclaredConstructor();
+            cnst.setAccessible(true);
+            return cnst.newInstance();
+        } catch (InstantiationException | IllegalAccessException | NoSuchMethodException | InvocationTargetException e) {
             e.printStackTrace();
         }
         return null;

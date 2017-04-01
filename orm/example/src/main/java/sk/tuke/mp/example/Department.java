@@ -15,7 +15,7 @@ public class Department implements IDepartment{
     @Column(required = true, maxLength = 10)
     private String code;
 
-    public Department() {
+    private Department() {
     }
 
     public Department(String name, String code) {

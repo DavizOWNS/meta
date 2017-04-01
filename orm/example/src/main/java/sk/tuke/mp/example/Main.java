@@ -2,6 +2,7 @@ package sk.tuke.mp.example;
 
 import sk.tuke.mp.persistence.PersistenceManager;
 import sk.tuke.mp.persistence.ReflectivePersistenceManager;
+import sk.tuke.mp.persistence.annotations.Transaction;
 
 import java.io.PrintWriter;
 import java.io.Writer;
@@ -10,6 +11,9 @@ import java.sql.DriverManager;
 import java.util.List;
 
 public class Main {
+    private static Department development;
+    private static Department marketing;
+
     public static void main(String[] args) throws Exception {
         Class.forName("org.apache.derby.jdbc.EmbeddedDriver").newInstance();
         //Connection conn = DriverManager.getConnection("jdbc:derby:orm/test.db;create=true");
@@ -20,8 +24,7 @@ public class Main {
 
         manager.initializeDatabase();
 
-        Department development = new Department("Development", "DVLP");
-        Department marketing = new Department("Marketing", "MARK");
+        CreateDepartments();
 
         Person hrasko = new Person("Janko", "Hrasko", 30);
         hrasko.setDepartment(development);
@@ -53,9 +56,16 @@ public class Main {
         }
 
         conn.close();
-        /*try {
-            DriverManager.getConnection("jdbc:derby:orm/test.db;shutdown=true").close();
-        }
-        catch (Exception ignored){}*/
+//        try {
+//            DriverManager.getConnection("jdbc:derby:orm/test.db;shutdown=true").close();
+//        }
+//        catch (Exception ignored){}
+    }
+
+    @Transaction
+    private static void CreateDepartments()
+    {
+        development = new Department("Development", "DVLP");
+        marketing = new Department("Marketing", "MARK");
     }
 }

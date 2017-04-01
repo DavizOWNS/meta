@@ -144,20 +144,6 @@ public class ReflectivePersistenceManager implements PersistenceManager {
     public <T> T get(Class<T> type, int id) throws PersistenceException {
         throwIfNotInitialized();
 
-        if(type.isInterface())
-        {
-            Enhancer enhancer = new Enhancer();
-            enhancer.setSuperclass(type);
-            enhancer.setCallback(new LazyLoader() {
-                @Override
-                public Object loadObject() throws Exception {
-                    return getFromDb(type, id);
-                }
-            });
-
-            return (T) enhancer.create();
-        }
-
         return getFromDb(type, id);
     }
     private <T> T getFromDb(Class<T> type, int id) throws PersistenceException

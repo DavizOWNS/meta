@@ -27,7 +27,7 @@ public class Person implements IPerson{
         this.age = age;
     }
 
-    public Person() {
+    private Person() {
     }
 
     public String getSurname() {

@@ -9,7 +9,7 @@ import java.lang.annotation.Target;
  * Created by DAVID on 18.2.2017.
  */
 @Target(ElementType.TYPE)
-@Retention(RetentionPolicy.SOURCE)
+@Retention(RetentionPolicy.RUNTIME)
 public @interface Entity {
     String name();
 }
