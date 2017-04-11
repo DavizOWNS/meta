@@ -55,6 +55,10 @@ public class Main {
             System.out.println("  " + person.getDepartment());
         }
 
+        IPerson p1 = manager.get(IPerson.class, 1);
+        System.out.println("Returned p1");
+        p1.getDepartment();
+
         conn.close();
 //        try {
 //            DriverManager.getConnection("jdbc:derby:orm/test.db;shutdown=true").close();

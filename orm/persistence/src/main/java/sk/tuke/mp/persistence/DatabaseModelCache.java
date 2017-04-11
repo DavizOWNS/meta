@@ -41,11 +41,11 @@ public class DatabaseModelCache {
         if(valueAccessors.containsKey(property))
             return valueAccessors.get(property);
 
-        Class implementationType = null;
-        if(property.getLazyImplementation() != null)
-            implementationType = property.getLazyImplementation();
-        else
-            implementationType = property.getPropertyType();
+//        Class implementationType = null;
+//        if(property.getLazyImplementation() != null)
+//            implementationType = property.getLazyImplementation();
+//        else
+//            implementationType = property.getPropertyType();
         try {
             IValueAccessor accessor = new ColumnValueAccessor(property.getPropertyType(),
                     new FieldValueSetter(property.getEntity().getEntityType().getDeclaredField(property.getFieldName())),

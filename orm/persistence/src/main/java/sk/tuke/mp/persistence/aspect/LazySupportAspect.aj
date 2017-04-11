@@ -3,50 +3,34 @@ package sk.tuke.mp.persistence.aspect;
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.LazyLoader;
 import sk.tuke.mp.persistence.ReflectivePersistenceManager;
-
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
+import sk.tuke.mp.persistence.infrastructure.Entity;
 
 /**
  * Created by DAVID on 29.3.2017.
  */
 public aspect LazySupportAspect {
 
-    Object around (ReflectivePersistenceManager manager)
-            :execution(* sk.tuke.mp.persistence.ReflectivePersistenceManager.get(..))
-            && this(manager)
+    Object around (ReflectivePersistenceManager manager, Entity entity, Class interfaceType, int id)
+            :execution(* sk.tuke.mp.persistence.ReflectivePersistenceManager.getFromDb(..))
+            && this(manager) && args(entity, interfaceType, id)
     {
-        Class type = (Class) thisJoinPoint.getArgs()[0];
-//        Method method = null;
-//        try {
-//            method = manager.getClass().getDeclaredMethod("getFromDb", Class.class, int.class);
-//            method.setAccessible(true);
-//        } catch (NoSuchMethodException e) {
-//            e.printStackTrace();
-//        }
-
-        if(type.isInterface())
+        if(interfaceType != null)
         {
-            System.out.println("Lazy...");
+            System.out.println("Lazy of " + interfaceType.toString());
+            System.out.println("\t at " + thisJoinPoint);
+
             Enhancer enhancer = new Enhancer();
-            enhancer.setSuperclass(type);
-            //Method finalMethod = method;
-            enhancer.setCallback((LazyLoader) () -> {
-                return proceed(manager);
-                //System.out.println(result.toString());
-                //return finalMethod.invoke(manager, thisJoinPoint.getArgs());
+            enhancer.setSuperclass(interfaceType);
+            enhancer.setCallback(new LazyLoader() {
+                @Override
+                public Object loadObject() throws Exception {
+                    return proceed(manager, entity, interfaceType, id);
+                }
             });
 
             return enhancer.create();
         }
 
-//        try {
-//            System.out.println("Normal");
-//            return method.invoke(manager, thisJoinPoint.getArgs());
-//        } catch (IllegalAccessException | InvocationTargetException e) {
-//            e.printStackTrace();
-//            return null;
-//        }
-        return proceed(manager);
+        return proceed(manager, entity, interfaceType, id);
     }
 }

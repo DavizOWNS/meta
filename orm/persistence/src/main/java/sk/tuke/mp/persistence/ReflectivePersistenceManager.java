@@ -98,7 +98,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
     public <T> List<T> getAll(Class<T> clazz) throws PersistenceException {
         throwIfNotInitialized();
 
-        Entity entity = dbModel.entity(clazz);
+        Entity entity = findEntity(clazz);
         if(entity == null)
             throw new PersistenceException("Provided class is not supported: " + clazz.getName());
 
@@ -119,7 +119,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
                     if(p.getReference() != null)
                     {
                         int id = result.getInt(p.getColumnName());
-                        val = get(valueAccessor.getValueType(), id);
+                        val = getFromDb(p, id);
                     }
                     else {
                         val = extractValue(result, p);
@@ -144,13 +144,20 @@ public class ReflectivePersistenceManager implements PersistenceManager {
     public <T> T get(Class<T> type, int id) throws PersistenceException {
         throwIfNotInitialized();
 
-        return getFromDb(type, id);
+        if(type.isInterface())
+        {
+            final Entity et = findEntity(type);
+            if(et == null)
+                throw new PersistenceException("Can not perform get for type " + type.toString());
+            return getFromDb(et, type, id);
+        }
+        return getFromDb(dbModel.entity(type), id);
     }
-    private <T> T getFromDb(Class<T> type, int id) throws PersistenceException
+
+    private <T> T getFromDb(Entity entity, int id) throws PersistenceException
     {
-        Entity entity = dbModel.entity(type);
         if(entity == null)
-            throw new PersistenceException("Provided class is not supported: " + type.getName());
+            throw new PersistenceException("Provided class is not supported: " + "<unknown>");
 
         try(PreparedStatement statement = connection.prepareStatement("SELECT * FROM " + entity.getName() + " WHERE id = ?"))
         {
@@ -170,7 +177,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
                 if(p.getReference() != null)
                 {
                     int refId = result.getInt(p.getColumnName());
-                    valueAccessor.set(instance, get(valueAccessor.getValueType(), refId));
+                    valueAccessor.set(instance, getFromDb(p, refId));
                 }
                 else
                 {
@@ -184,15 +191,50 @@ public class ReflectivePersistenceManager implements PersistenceManager {
         }
         catch (SQLException ex)
         {
-            throw new PersistenceException("Object of type " + type.getName() + " with id " + id + " could not be loaded from database", ex);
+            throw new PersistenceException("Object of type " + "<unknown>" + " with id " + id + " could not be loaded from database", ex);
         }
+    }
+
+    /**
+     * This enables lazy implementation
+     * @param prop
+     * @param id
+     * @param <T>
+     * @return
+     * @throws PersistenceException
+     */
+    private <T> T getFromDb(Property prop, int id) throws PersistenceException
+    {
+        if(prop.getLazyImplementation() != null)
+        {
+            return getFromDb(dbModel.entity(prop.getLazyImplementation()), prop.getPropertyType(), id);
+        }
+
+        return getFromDb(dbModel.entity(prop.getPropertyType()), id);
+    }
+
+    private <T> T getFromDb(Entity entity, Class interfaceType, int id) throws PersistenceException {
+//        if(interfaceType != null)
+//        {
+//            Enhancer enhancer = new Enhancer();
+//            enhancer.setSuperclass(interfaceType);
+//            enhancer.setCallback(new LazyLoader() {
+//                @Override
+//                public Object loadObject() throws Exception {
+//                    return getFromDb(entity, id);
+//                }
+//            });
+//
+//            return (T) enhancer.create();
+//        }
+        return getFromDb(entity, id);
     }
 
     @Override
     public <T> List<T> getBy(Class<T> type, String fieldName, Object value) {
         throwIfNotInitialized();
 
-        Entity entity = dbModel.entity(type);
+        Entity entity = findEntity(type);
         if(entity == null)
             return null;
 
@@ -228,7 +270,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
                     {
                         int id = result.getInt(p.getColumnName());
                         try {
-                            val = get(valueAccessor.getValueType(), id);
+                            val = getFromDb(p, id);
                         } catch (PersistenceException e) {
                             e.printStackTrace();
                             return new ArrayList<>();
@@ -396,6 +438,26 @@ public class ReflectivePersistenceManager implements PersistenceManager {
         return id;
     }
 
+    private Entity findEntity(Class type)
+    {
+        if(!type.isInterface())
+            return dbModel.entity(type);
+
+        Entity entity = null;
+        for(Entity e : dbModel.getEntities())
+        {
+            if(type.isAssignableFrom(e.getEntityType()))
+            {
+                if(entity != null)
+                {
+                    return null;
+                }
+                entity = e;
+            }
+        }
+
+        return entity;
+    }
     private Object extractValue(ResultSet resultSet, String columnName, ColumnType columnType) throws SQLException {
         switch (columnType) {
             case INT:
@@ -439,5 +501,10 @@ public class ReflectivePersistenceManager implements PersistenceManager {
     {
         if(!isInitialized)
             throw new IllegalStateException("Not initialized. Call initializeDatabase() first.");
+    }
+
+    private interface Action<T>
+    {
+        T execute();
     }
 }

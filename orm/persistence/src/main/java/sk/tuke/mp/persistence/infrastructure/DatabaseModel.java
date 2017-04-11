@@ -19,8 +19,7 @@ public class DatabaseModel {
     {
         for(Entity et : entities)
         {
-            if(type.isAssignableFrom(et.getEntityType()))
-
+            if(type == et.getEntityType())
                 return et;
         }
 
