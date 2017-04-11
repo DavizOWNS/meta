@@ -7,12 +7,31 @@ import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.Stack;
 
 /**
  * Created by DAVID on 28.3.2017.
  */
 public aspect AutoSaveAspect {
-    private WeakReference<PersistenceManager> pmRef;
+    private Stack<WeakReference<PersistenceManager>> pmRefs;
+
+    public AutoSaveAspect()
+    {
+        pmRefs = new Stack<>();
+    }
+
+    private PersistenceManager getPersistenceManager()
+    {
+        while(!pmRefs.isEmpty())
+        {
+            PersistenceManager result = pmRefs.peek().get();
+            if(result != null)
+                return result;
+            pmRefs.pop();
+        }
+
+        return null;
+    }
 
     after (Object obj)
             : set(@sk.tuke.mp.persistence.annotations.Column !static * *.*)
@@ -22,7 +41,7 @@ public aspect AutoSaveAspect {
     {
         System.out.println("AutoSave");
         try {
-            pmRef.get().save(obj);
+            getPersistenceManager().save(obj);
         } catch (PersistenceException e) {
             e.printStackTrace();
         }
@@ -35,7 +54,7 @@ public aspect AutoSaveAspect {
     {
         System.out.println("AutoSave after constructor");
         try {
-            pmRef.get().save(obj);
+            getPersistenceManager().save(obj);
         } catch (PersistenceException e) {
             e.printStackTrace();
         }
@@ -45,7 +64,7 @@ public aspect AutoSaveAspect {
             :initialization(sk.tuke.mp.persistence.PersistenceManager+.new(..))
             && target(obj)
     {
-        pmRef = new WeakReference<PersistenceManager>((PersistenceManager) obj);
+        pmRefs.push(new WeakReference<PersistenceManager>((PersistenceManager) obj));
     }
 
     Object around ()
@@ -55,9 +74,9 @@ public aspect AutoSaveAspect {
 
         Connection conn = null;
         try {
-            Field f = pmRef.get().getClass().getDeclaredField("connection");
+            Field f = getPersistenceManager().getClass().getDeclaredField("connection");
             f.setAccessible(true);
-            conn = (Connection) f.get(pmRef.get());
+            conn = (Connection) f.get(getPersistenceManager());
         } catch (NoSuchFieldException | IllegalAccessException e) {
             e.printStackTrace();
 
