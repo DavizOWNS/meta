@@ -28,6 +28,7 @@ public class Property {
     private String name;
     private boolean isPrimaryKey = false;
     private boolean isRequired = false;
+    private boolean isUnique = false;
     private HashMap<String, Object> annotations;
     private Class propertyType;
     private Class lazyImplementation;
@@ -52,6 +53,7 @@ public class Property {
     public boolean isRequired() {
         return isRequired;
     }
+    public boolean isUnique() { return isUnique;}
 
     public String getColumnName()
     {
@@ -130,6 +132,12 @@ public class Property {
 
             return this;
         }
+        public Property.Builder setUnique()
+        {
+            prop.isUnique = true;
+            return this;
+        }
+
         public Property.Builder references(String entityName, String propertyName)
         {
             prop.reference = new Reference(entityName, propertyName);

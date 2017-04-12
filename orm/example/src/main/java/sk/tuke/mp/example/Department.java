@@ -12,7 +12,7 @@ public class Department implements IDepartment{
 	private int id;
     @Column(required = true, maxLength = 20)
     private String name;
-    @Column(required = true, maxLength = 10)
+    @Column(required = true, unique = true, maxLength = 10)
     private String code;
 
     private Department() {

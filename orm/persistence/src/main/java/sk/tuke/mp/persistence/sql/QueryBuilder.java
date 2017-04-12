@@ -33,6 +33,10 @@ public final class QueryBuilder {
             sb.append(" ");
             sb.append(SqlTypeConverter.getSqlTypeName(p));
 
+            if(p.isUnique())
+            {
+                sb.append(" UNIQUE");
+            }
             if(p.isRequired())
             {
                 sb.append(" NOT NULL");

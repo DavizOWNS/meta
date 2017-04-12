@@ -15,5 +15,6 @@ public @interface Column {
     boolean required() default false;
     String getter() default "";
     String setter() default "";
+    boolean unique() default false;
     int maxLength() default 50;
 }

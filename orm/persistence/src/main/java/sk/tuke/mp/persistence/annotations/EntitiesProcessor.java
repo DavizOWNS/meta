@@ -157,6 +157,11 @@ public class EntitiesProcessor extends AbstractProcessor {
             }
             queryBuilder.append("\t").append(columnName).append(" ").append(sqlType);
 
+            if(column.unique())
+            {
+                propConfig.append(".setUnique()");
+                queryBuilder.append(" UNIQUE");
+            }
             if(column.required())
             {
                 propConfig.append(".setRequired()");
